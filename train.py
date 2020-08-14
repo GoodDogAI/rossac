@@ -1,11 +1,14 @@
 import argparse
 import os.path
 import sys
-import torch
 
 # requires https://github.com/ArmyOfRobots/yolov5 to be cloned in ..\YOLOv5
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'YOLOv5'))
 
+import torch
+
+from bot_env import RobotEnvironment
+from sac import SoftActorCritic
 import models
 
 def prepare_backbone(backbone):
@@ -33,3 +36,6 @@ if __name__ == '__main__':
     backbone = torch.load(opt.model)['model'].float()
     backbone = prepare_backbone(backbone)
 
+    # every 1000 entries in replay are ~500MB
+    sac = SoftActorCritic(RobotEnvironment, replay_size=20000)
+    print(sac.replay_buffer)
