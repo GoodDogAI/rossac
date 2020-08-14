@@ -43,10 +43,10 @@ class ReplayBuffer:
 
 class SoftActorCritic:
     def __init__(self, env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
-            steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99,
+            replay_size=int(1e6), gamma=0.99,
             polyak=0.995, lr=1e-3, alpha=0.2,
-            update_after=1000, update_every=50, max_ep_len=1000,
-            logger_kwargs=dict(), save_freq=1):
+            max_ep_len=1000,
+            logger_kwargs=dict()):
         """
         Soft Actor-Critic (SAC)
 
@@ -94,11 +94,6 @@ class SoftActorCritic:
 
             seed (int): Seed for random number generators.
 
-            steps_per_epoch (int): Number of steps of interaction (state-action pairs)
-                for the agent and the environment in each epoch.
-
-            epochs (int): Number of epochs to run and train agent.
-
             replay_size (int): Maximum length of replay buffer.
 
             gamma (float): Discount factor. (Always between 0 and 1.)
@@ -118,30 +113,9 @@ class SoftActorCritic:
             alpha (float): Entropy regularization coefficient. (Equivalent to
                 inverse of reward scale in the original SAC paper.)
 
-            batch_size (int): Minibatch size for SGD.
-
-            start_steps (int): Number of steps for uniform-random action selection,
-                before running real policy. Helps exploration.
-
-            update_after (int): Number of env interactions to collect before
-                starting to do gradient descent updates. Ensures replay buffer
-                is full enough for useful updates.
-
-            update_every (int): Number of env interactions that should elapse
-                between gradient descent updates. Note: Regardless of how long
-                you wait between updates, the ratio of env steps to gradient steps
-                is locked to 1.
-
-            num_test_episodes (int): Number of episodes to test the deterministic
-                policy at the end of each epoch.
-
             max_ep_len (int): Maximum length of trajectory / episode / rollout.
 
             logger_kwargs (dict): Keyword args for EpochLogger.
-
-            save_freq (int): How often (in terms of gap between epochs) to save
-                the current policy and value function.
-
         """
 
         self.logger = EpochLogger(**logger_kwargs)
