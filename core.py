@@ -100,28 +100,3 @@ class MLPActorCritic(nn.Module):
         with torch.no_grad():
             a, _ = self.pi(obs, deterministic, False)
             return a.numpy()
-
-
-# Jake's code to create an actor critic and export it to ONNX format
-from gym.spaces import Box
-from math import inf
-
-# Observation space is the yolo intermediate layer output
-observation_space = Box(low=-inf, high=inf, shape=(512 * 15 * 20,), dtype=np.float32)
-
-# Action space is the forward speed, angular rate, camera pan, and camera tilt
-# Constants taken from randomwalk.cpp in the mainbot brain code
-action_space = Box(low=np.array([-0.5, -0.5, 350, 475]),
-                   high=np.array([0.5, 0.5, 700, 725]), dtype=np.float32)
-
-actor = MLPActorCritic(observation_space, action_space, )
-
-sample_input = observation_space.sample()
-sample_input = np.expand_dims(sample_input, 0)
-sample_input = torch.from_numpy(sample_input)
-
-print("TORCH Version: ", torch.__version__)
-
-#torch.onnx.export(mlp([observation_space.shape[0], 512, 512], nn.ReLU), sample_input, "mlp.onnx", verbose=True, opset_version=12)
-torch.onnx.export(actor.pi, (sample_input,), "mlp.onnx", verbose=True, opset_version=12,
-                  input_names=["yolo_intermediate"], output_names=["actions"])
