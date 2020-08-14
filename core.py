@@ -30,14 +30,14 @@ LOG_STD_MIN = -20
 
 class SquashedGaussianMLPActor(nn.Module):
 
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_limit):
+    def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_space):
         super().__init__()
         self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
-        self.act_limit = act_limit
+        self.act_space = act_space
 
-    def forward(self, obs, deterministic=False, with_logprob=True):
+    def forward(self, obs, deterministic=True, with_logprob=True):
         net_out = self.net(obs)
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
@@ -64,7 +64,10 @@ class SquashedGaussianMLPActor(nn.Module):
             logp_pi = None
 
         pi_action = torch.tanh(pi_action)
-        pi_action = self.act_limit * pi_action
+
+        # Now scale each one to the range of the action space
+        pi_action = pi_action * torch.from_numpy((self.act_space.high - self.act_space.low) / 2)
+        pi_action = pi_action + torch.from_numpy((self.act_space.high + self.act_space.low) / 2)
 
         return pi_action, logp_pi
 
@@ -87,10 +90,9 @@ class MLPActorCritic(nn.Module):
 
         obs_dim = observation_space.shape[0]
         act_dim = action_space.shape[0]
-        act_limit = action_space.high[0]
 
         # build policy and value functions
-        self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, hidden_sizes, activation, act_limit)
+        self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, hidden_sizes, activation, action_space)
         self.q1 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
         self.q2 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
 
@@ -117,6 +119,8 @@ actor = MLPActorCritic(observation_space, action_space, )
 sample_input = observation_space.sample()
 sample_input = np.expand_dims(sample_input, 0)
 sample_input = torch.from_numpy(sample_input)
+
+print("TORCH Version: ", torch.__version__)
 
 #torch.onnx.export(mlp([observation_space.shape[0], 512, 512], nn.ReLU), sample_input, "mlp.onnx", verbose=True, opset_version=12)
 torch.onnx.export(actor.pi, (sample_input,), "mlp.onnx", verbose=True, opset_version=12)
