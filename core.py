@@ -37,7 +37,7 @@ class SquashedGaussianMLPActor(nn.Module):
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_space = act_space
 
-    def forward(self, obs, deterministic=True, with_logprob=True):
+    def forward(self, obs, deterministic=True, with_logprob=False):
         net_out = self.net(obs)
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
@@ -61,7 +61,7 @@ class SquashedGaussianMLPActor(nn.Module):
             logp_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
             logp_pi -= (2*(np.log(2) - pi_action - F.softplus(-2*pi_action))).sum(axis=1)
         else:
-            logp_pi = None
+            logp_pi = torch.zeros_like(pi_action)
 
         pi_action = torch.tanh(pi_action)
 
@@ -123,4 +123,5 @@ sample_input = torch.from_numpy(sample_input)
 print("TORCH Version: ", torch.__version__)
 
 #torch.onnx.export(mlp([observation_space.shape[0], 512, 512], nn.ReLU), sample_input, "mlp.onnx", verbose=True, opset_version=12)
-torch.onnx.export(actor.pi, (sample_input,), "mlp.onnx", verbose=True, opset_version=12)
+torch.onnx.export(actor.pi, (sample_input,), "mlp.onnx", verbose=True, opset_version=12,
+                  input_names=["yolo_intermediate"], output_names=["actions"])
