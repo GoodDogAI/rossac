@@ -85,12 +85,35 @@ def _simulate_trace(ticks, primary_interval, secondary_probs):
 # test_primary, test_secondaries = _simulate_trace(100, 5, [0.3, 0.5])
 # test_interpolated = interpolate_events(test_primary, test_secondaries, max_gap_ns=3)
 
+def load_cmdvels(dir_path):
+    import json
+
+    cmdvels = dict()
+    for name in os.listdir(dir_path):
+        full_name = os.path.join(dir_path, name)
+        _, ext = os.path.splitext(name)
+        if os.path.isfile(full_name) and ext == '.cmd_vels':
+            with open(full_name) as file:
+                for line in file.readlines():
+                    if len(line.strip()) == 0:
+                        continue
+                    cmdvel = json.loads(line)
+                    ts = int(cmdvel['ts'])
+                    reading = np.asarray([cmdvel['linear'][0]] + [cmdvel['angular'][2]])
+                    cmdvels[ts] = reading
+    
+    return cmdvels
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--img-dir', type=str, help='directory with backbone outputs')
     parser.add_argument('--cmdvel-dir', type=str, help='directory with cmd_vels')
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
     opt = parser.parse_args()
+
+    cmdvels = load_cmdvels(opt.cmdvel_dir)
+
+    print("cmdvels: " + str(len(cmdvels)))
 
     # every 1000 entries in replay are ~500MB
     sac = SoftActorCritic(RobotEnvironment, replay_size=20000)
