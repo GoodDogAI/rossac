@@ -26,7 +26,7 @@ assert(interpolate(1, 1, 5, 11, 11) == 5)
 
 def interpolate_events(primary, secondaries, max_gap_ns):
     primary = sorted(primary.items())
-    secondaries = list(map(lambda dict: list(sorted(dict)), secondaries))
+    secondaries = list(map(lambda dict: list(sorted(dict.items())), secondaries))
 
     result = []
     for ts, event in primary:
@@ -66,6 +66,24 @@ def interpolate_events(primary, secondaries, max_gap_ns):
         if len(interpolated) != len(secondaries):
             continue
         result.append((ts, event, interpolated))
+
+    return result
+
+def _simulate_trace(ticks, primary_interval, secondary_probs):
+    import random
+
+    primary = dict()
+    secondaries = list(map(lambda x: dict(), secondary_probs))
+    for tick in range(ticks):
+        if tick % primary_interval == 0:
+            primary[tick] = tick
+        for i, prob in enumerate(secondary_probs):
+            if prob > random.random():
+                secondaries[i][tick] = tick
+    return primary, secondaries
+
+# test_primary, test_secondaries = _simulate_trace(100, 5, [0.3, 0.5])
+# test_interpolated = interpolate_events(test_primary, test_secondaries, max_gap_ns=3)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
