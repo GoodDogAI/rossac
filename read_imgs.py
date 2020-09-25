@@ -6,6 +6,7 @@ import png
 import os.path
 
 arg_parser = argparse.ArgumentParser()
+arg_parser.add_argument("--camera_topic", default='/camera/infra2/image_rect_raw')
 arg_parser.add_argument("bags", nargs='+')
 args = arg_parser.parse_args()
 
@@ -23,11 +24,11 @@ for bag_file in args.bags:
 
     cmd_file = open(bag_file + ".cmd_vels", 'w')
 
-    for topic, msg, ts in bag.read_messages(['/camera/color/image_raw', '/cmd_vel']):
+    for topic, msg, ts in bag.read_messages([args.camera_topic, '/cmd_vel']):
         #if topic not in seen:
             full_ts = ts.nsecs + ts.secs * 1000000000
             print("{} @ {}".format(topic, full_ts))
-            if topic == '/camera/color/image_raw':
+            if topic == args.camera_topic:
                 print("{}x{} {}; row bytes: {}".format(msg.width, msg.height, msg.encoding, msg.step))
                 print(type(msg.data))
                 img_name = 'imgs/{}.png'.format(full_ts)
@@ -35,7 +36,9 @@ for bag_file in args.bags:
                     img = []
                     for i in range(0, len(msg.data), msg.step):
                         img.append(msg.data[i:i+msg.step])
-                    png.from_array(img, mode='RGB').save(img_name)
+
+                    img_mode = 'L' if "infra" in args.camera_topic else 'RGB'
+                    png.from_array(img, mode=img_mode).save(img_name)
             else:
                 print(dir(msg))
                 cmd_file.write('{{ "ts": "{}", "linear": [{},{},{}], "angular": [{},{},{}] }}\n'
