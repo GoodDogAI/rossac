@@ -67,7 +67,7 @@ def detect_yolo_bboxes(prediction: np.ndarray, kernel: YoloKernel) -> List[BBox]
 
                     if class_prob > 0.80:
                         result.append(BBox(x=(col - 0.5 + 2 * prediction[0, c, row, col, 0]) * input_w / kernel.width,
-                                           y=(col - 0.5 + 2 * prediction[0, c, row, col, 1]) * input_w / kernel.width,
+                                           y=(row - 0.5 + 2 * prediction[0, c, row, col, 1]) * input_w / kernel.width,
                                            width=(2*prediction[0, c, row, col, 2])**2*kernel.anchors[2*c],
                                            height=(2*prediction[0, c, row, col, 3])**2*kernel.anchors[2*c + 1],
                                            class_idx=class_idx,
@@ -82,6 +82,21 @@ def any_objects_present(prediction: np.ndarray, kernel: YoloKernel) -> float:
     all_probs = np.expand_dims(prediction[..., 4], -1) * prediction[..., 5:]
 
     return np.sum(all_probs) / 50.0
+
+
+def centered_objects_present(prediction: np.ndarray, kernel: YoloKernel) -> float:
+    prediction = 1 / (1 + np.exp(-prediction))
+    all_probs = prediction[..., 4] * np.amax(prediction[..., 5:], axis=-1)
+
+    xgrid = np.arange(prediction.shape[3]).reshape((1, 1, 1, -1))
+    all_xs = (xgrid - 0.5 + 2 * prediction[..., 0]) * input_w / kernel.width
+
+    ygrid = np.arange(prediction.shape[2]).reshape((1,1,-1,1))
+    all_ys = (ygrid - 0.5 + 2 * prediction[..., 1]) * input_h / kernel.height
+
+    all_centers = np.sqrt((all_xs - input_w / 2) ** 2 + (all_ys - input_h / 2) ** 2)
+
+    return np.sum(all_probs / all_centers)
 
 
 def get_reward(png_path: Path) -> float:
@@ -110,11 +125,11 @@ def get_reward(png_path: Path) -> float:
     #              detect_yolo_bboxes(pred[1], yolo2) + \
     #              detect_yolo_bboxes(pred[2], yolo3)
     #print(all_bboxes)
-    
-    return any_objects_present(pred[0], yolo1) + \
-           any_objects_present(pred[1], yolo2) + \
-           any_objects_present(pred[2], yolo3)
+
+    return centered_objects_present(pred[0], yolo1) + \
+           centered_objects_present(pred[1], yolo2) + \
+           centered_objects_present(pred[2], yolo3)
 
 if __name__ == "__main__":
-    loss = get_reward(Path("imgs", "1598832117661701724.png"))
-    print(f"Loss: {loss}")
+    reward = get_reward(Path("imgs", "1598832182944358229.png"))
+    print(f"Reward: {reward}")
