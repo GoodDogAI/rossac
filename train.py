@@ -6,7 +6,9 @@ import numpy as np
 import torch
 
 from bot_env import RobotEnvironment
+from actor_critic.core import MLPActorCritic
 from sac import SoftActorCritic
+from dump_onnx import export
 
 # requires https://github.com/ArmyOfRobots/yolov5 to be cloned in ..\YOLOv5
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'YOLOv5'))
@@ -140,6 +142,8 @@ if __name__ == '__main__':
 
     # every 1000 entries in replay are ~500MB
     sac = SoftActorCritic(RobotEnvironment, replay_size=20000)
+    export(sac.ac, 'empty.onnx')
+
     for i in range(len(interpolated)-1):
         ts, act, observations = interpolated[i]
         _, _, future_observations = interpolated[i+1]
@@ -155,6 +159,8 @@ if __name__ == '__main__':
     
     for i in range(1000*1000*1000):
         sac.train(batch_size=32, batch_count=32)
-        print("train update " + str(i))
         print('LossQ: ' + str(sac.logger.epoch_dict['LossQ'][-1]) +
               '  LossPi: ' + str(sac.logger.epoch_dict['LossPi'][-1]))
+        model_name = f"sac-{i:05d}.onnx"
+        export(sac.ac, model_name)
+        print("saved " + model_name)
