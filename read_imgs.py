@@ -31,7 +31,7 @@ for bag_file in args.bags:
             if topic == args.camera_topic:
                 print("{}x{} {}; row bytes: {}".format(msg.width, msg.height, msg.encoding, msg.step))
                 print(type(msg.data))
-                img_name = 'imgs/{}.png'.format(full_ts)
+                img_name = os.path.join(os.path.dirname(bag_file), 'imgs', '{}.png'.format(full_ts))
                 if not os.path.isfile(img_name):
                     img = []
                     for i in range(0, len(msg.data), msg.step):

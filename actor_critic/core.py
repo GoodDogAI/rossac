@@ -30,14 +30,17 @@ LOG_STD_MIN = -20
 
 class SquashedGaussianMLPActor(nn.Module):
 
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_space):
+    def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_space, deterministic=False, with_logprob=True):
         super().__init__()
         self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_space = act_space
 
-    def forward(self, obs, deterministic=True, with_logprob=False):
+        self.deterministic = deterministic
+        self.with_logprob = with_logprob
+
+    def forward(self, obs):
         net_out = self.net(obs)
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
@@ -46,13 +49,13 @@ class SquashedGaussianMLPActor(nn.Module):
 
         # Pre-squash distribution and sample
         pi_distribution = ONNXNormal(mu, std)
-        if deterministic:
+        if self.deterministic:
             # Only used for evaluating policy at test time.
             pi_action = mu
         else:
             pi_action = pi_distribution.rsample()
 
-        if with_logprob:
+        if self.with_logprob:
             # Compute logprob from Gaussian, and then apply correction for Tanh squashing.
             # NOTE: The correction formula is a little bit magic. To get an understanding
             # of where it comes from, check out the original SAC paper (arXiv 1801.01290)

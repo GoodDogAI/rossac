@@ -11,7 +11,7 @@ from sac import SoftActorCritic
 from dump_onnx import export
 
 # requires https://github.com/ArmyOfRobots/yolov5 to be cloned in ..\YOLOv5
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'YOLOv5'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'yolov5'))
 
 import models
 
@@ -142,7 +142,6 @@ if __name__ == '__main__':
 
     # every 1000 entries in replay are ~500MB
     sac = SoftActorCritic(RobotEnvironment, replay_size=20000)
-    export(sac.ac, 'empty.onnx')
 
     for i in range(len(interpolated)-1):
         ts, act, observations = interpolated[i]

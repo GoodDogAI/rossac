@@ -4,7 +4,7 @@ import os, sys
 import torch
 
 # requires https://github.com/ArmyOfRobots/yolov5 to be cloned in ..\YOLOv5
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'YOLOv5'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'yolov5'))
 
 import models
 
