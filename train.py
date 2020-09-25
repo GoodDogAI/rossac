@@ -104,6 +104,22 @@ def load_cmdvels(dir_path):
     
     return cmdvels
 
+def load_backbone_outputs(dir_path):
+    outputs = dict()
+
+    for name in os.listdir(dir_path):
+        full_name = os.path.join(dir_path, name)
+        no_ext, ext = os.path.splitext(name)
+        no_ext2, extra_ext = os.path.splitext(no_ext)
+        if os.path.isfile(full_name) and ext == '.npy':
+            ts = int(no_ext2 or no_ext)
+            outputs[ts] = np.load(full_name)
+    
+    return outputs
+
+def _flatten(arr):
+    return np.reshape(arr, -1)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--img-dir', type=str, help='directory with backbone outputs')
@@ -111,10 +127,34 @@ if __name__ == '__main__':
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
     opt = parser.parse_args()
 
-    cmdvels = load_cmdvels(opt.cmdvel_dir)
+    print("CUDA: " + str(torch.cuda.is_available()))
 
+    cmdvels = load_cmdvels(opt.cmdvel_dir)
     print("cmdvels: " + str(len(cmdvels)))
+
+    backbone_outputs = load_backbone_outputs(opt.img_dir)
+    print("backbone outputs: " + str(len(backbone_outputs)))
+
+    interpolated = interpolate_events(cmdvels, [backbone_outputs], max_gap_ns=1000*1000*1000)
+    print("matching events: " + str(len(interpolated)))
 
     # every 1000 entries in replay are ~500MB
     sac = SoftActorCritic(RobotEnvironment, replay_size=20000)
-    print(sac.replay_buffer)
+    for i in range(len(interpolated)-1):
+        ts, act, observations = interpolated[i]
+        _, _, future_observations = interpolated[i+1]
+        reward = np.average(future_observations[0])
+        end_of_episode = i%100 == 99
+        sac.replay_buffer.store(_flatten(observations[0]),
+            np.concatenate([act, np.array([700, 700])]),
+            rew=reward,
+            next_obs=_flatten(future_observations[0]),
+            done=end_of_episode)       
+
+    print("filled in replay buffer")
+    
+    for i in range(1000*1000*1000):
+        sac.train(batch_size=32, batch_count=32)
+        print("train update " + str(i))
+        print('LossQ: ' + str(sac.logger.epoch_dict['LossQ'][-1]) +
+              '  LossPi: ' + str(sac.logger.epoch_dict['LossPi'][-1]))

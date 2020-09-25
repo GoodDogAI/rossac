@@ -46,6 +46,7 @@ class SoftActorCritic:
             replay_size=int(1e6), gamma=0.99,
             polyak=0.995, lr=1e-3, alpha=0.2,
             max_ep_len=1000,
+            device=None,
             logger_kwargs=dict()):
         """
         Soft Actor-Critic (SAC)
@@ -127,6 +128,8 @@ class SoftActorCritic:
         self.gamma = gamma
         self.polyak = polyak
 
+        self.device = device
+
         torch.manual_seed(seed)
         np.random.seed(seed)
 
@@ -140,6 +143,8 @@ class SoftActorCritic:
         # Create actor-critic module and target networks
         self.ac = actor_critic(self.env.observation_space, self.env.action_space, **ac_kwargs)
         self.ac_targ = deepcopy(self.ac)
+        self.ac = self._to_device(self.ac)
+        self.ac_targ = self._to_device(self.ac_targ)
 
         # Freeze target networks with respect to optimizers (only update via polyak averaging)
         for p in self.ac_targ.parameters():
@@ -291,6 +296,11 @@ class SoftActorCritic:
             # End of trajectory handling
             if d or (ep_len == self.max_ep_len):
                 o, ep_ret, ep_len = self.env.reset(), 0, 0
+
+    def _to_device(self, module):
+        if self.device:
+            return module.to(self.device)
+        return module
 
 
 if __name__ == '__main__':
