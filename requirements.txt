@@ -1,7 +1,14 @@
 numpy
-pypng
 torch
 
+
+# For reading ros bags
 --extra-index-url https://rospypi.github.io/simple/
 rospy
 rosbag
+
+# For reading pngs out of rosbags
+pypng
+
+# For running the same ONNX models as run on the bot locally, for loss function estimation
+onnxruntime
