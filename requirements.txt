@@ -1,6 +1,6 @@
 numpy
 torch
-
+dataclasses
 
 # For reading ros bags
 --extra-index-url https://rospypi.github.io/simple/
