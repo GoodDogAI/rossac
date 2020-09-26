@@ -1,6 +1,8 @@
 import argparse
 import os.path
 import sys
+import json
+from typing import Dict, Any, Callable
 
 import numpy as np
 import torch
@@ -9,11 +11,6 @@ from bot_env import RobotEnvironment
 from actor_critic.core import MLPActorCritic
 from sac import SoftActorCritic
 from dump_onnx import export
-
-# requires https://github.com/ArmyOfRobots/yolov5 to be cloned in ..\YOLOv5
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'yolov5'))
-
-import models
 
 DEFAULT_MAX_GAP_SECONDS = 5
 
@@ -87,24 +84,22 @@ def _simulate_trace(ticks, primary_interval, secondary_probs):
 # test_primary, test_secondaries = _simulate_trace(100, 5, [0.3, 0.5])
 # test_interpolated = interpolate_events(test_primary, test_secondaries, max_gap_ns=3)
 
-def load_cmdvels(dir_path):
-    import json
-
-    cmdvels = dict()
+def load_json_data(dir_path:str, extension:str, function: Callable[[Dict], Any]) -> Dict[int, Any]:
+    result = dict()
     for name in os.listdir(dir_path):
         full_name = os.path.join(dir_path, name)
         _, ext = os.path.splitext(name)
-        if os.path.isfile(full_name) and ext == '.cmd_vels':
+        if os.path.isfile(full_name) and ext == extension:
             with open(full_name) as file:
                 for line in file.readlines():
                     if len(line.strip()) == 0:
                         continue
-                    cmdvel = json.loads(line)
-                    ts = int(cmdvel['ts'])
-                    reading = np.asarray([cmdvel['linear'][0]] + [cmdvel['angular'][2]])
-                    cmdvels[ts] = reading
-    
-    return cmdvels
+                    data = json.loads(line)
+                    ts = int(data['ts'])
+                    reading = function(data)
+                    result[ts] = reading
+
+    return result
 
 def load_backbone_outputs(dir_path):
     outputs = dict()
@@ -124,17 +119,22 @@ def _flatten(arr):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--img-dir', type=str, help='directory with backbone outputs')
-    parser.add_argument('--cmdvel-dir', type=str, help='directory with cmd_vels')
+    parser.add_argument('--read-dir', type=str, help='directory with images, backbones, and json files')
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
     opt = parser.parse_args()
 
     print("CUDA: " + str(torch.cuda.is_available()))
 
-    cmdvels = load_cmdvels(opt.cmdvel_dir)
+    cmdvels = load_json_data(opt.read_dir, '.cmd_vels', lambda json: np.asarray([json['linear'][0]] + [json['angular'][2]]))
     print("cmdvels: " + str(len(cmdvels)))
 
-    backbone_outputs = load_backbone_outputs(opt.img_dir)
+    dynamixel = load_json_data(opt.read_dir, '.dynamixel', lambda json: np.asarray([json['pan_state']] + [json['tilt_state']], dtype=np.float32))
+    print("dynamixel: " + str(len(dynamixel)))
+
+    rewards = load_json_data(opt.read_dir, '.rewards', lambda json: np.asarray([json['reward']]))
+    print("rewards: " + str(len(rewards)))
+
+    backbone_outputs = load_backbone_outputs(opt.read_dir)
     print("backbone outputs: " + str(len(backbone_outputs)))
 
     interpolated = interpolate_events(cmdvels, [backbone_outputs], max_gap_ns=1000*1000*1000)
