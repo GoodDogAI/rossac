@@ -4,9 +4,11 @@ import json
 import argparse
 import png
 import os.path
+import onnxruntime as rt
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument("--camera_topic", default='/camera/infra2/image_rect_raw')
+arg_parser.add_argument('--onnx', type=str, default='./yolov5s.onnx', help='onnx weights path')
 arg_parser.add_argument("bags", nargs='+')
 args = arg_parser.parse_args()
 
@@ -18,6 +20,10 @@ args = arg_parser.parse_args()
 # class CmdVel:
 #     angular = Vec3
 #     linear = Vec3
+
+sess = rt.InferenceSession(args.onnx)
+
+
 for bag_file in args.bags:
     bag = rosbag.Bag(bag_file, 'r')
     seen = set()
@@ -40,13 +46,26 @@ for bag_file in args.bags:
 
                     img_mode = 'L' if "infra" in args.camera_topic else 'RGB'
                     png.from_array(img, mode=img_mode).save(img_name)
+
+                # Save off the intermediate state which is passed as input to the MLP-SAC
+
+                # Save off the reward score, for that image
+
             elif topic == '/dynamixel_workbench/dynamixel_state':
-                dynamixel_file.write(f'{{ "ts": "{full_ts}", "pan_state": {msg.dynamixel_state[0].present_position}, "tilt_state": {msg.dynamixel_state[1].present_position} }}\n')
+                json.dump({
+                    "ts": full_ts,
+                    "pan_state": msg.dynamixel_state[0].present_position,
+                    "tilt_state": msg.dynamixel_state[1].present_position,
+                }, dynamixel_file)
+                dynamixel_file.write("\n")
             else:
-                print(dir(msg))
-                cmd_file.write('{{ "ts": "{}", "linear": [{},{},{}], "angular": [{},{},{}] }}\n'
-                                .format(full_ts, msg.linear.x, msg.linear.y, msg.linear.z,
-                                                msg.angular.x, msg.angular.y, msg.angular.z))
+                json.dump({
+                    "ts": full_ts,
+                    "linear": [msg.linear.x, msg.linear.y, msg.linear.z],
+                    "angular": [msg.angular.x, msg.angular.y, msg.angular.z]
+                }, cmd_file)
+                cmd_file.write("\n")
+
             print()
             seen.add(topic)
 
