@@ -9,10 +9,12 @@ import numpy as np
 import onnxruntime as rt
 import png
 
-sess = rt.InferenceSession("C:\\Users\jakep\Desktop\yolov5s.onnx")
 
 input_binding_name = "images"
-output_binding_names = ["output", "427", "446"] # Get these from exploring your ONNX file
+
+# Get these from exploring your ONNX file, the first three are the three yolo-kernel result layers, the final entry
+# is the intermediate layer to be passed into SAC
+output_binding_names = ["output", "427", "446", "300"]
 
 # YOLO Specific parameters
 input_h = 480
@@ -99,7 +101,18 @@ def centered_objects_present(prediction: np.ndarray, kernel: YoloKernel) -> floa
     return np.sum(all_probs / all_centers)
 
 
-def get_reward(png_path: Path) -> float:
+def get_reward(pred: List[np.ndarray]) -> float:
+    # all_bboxes = detect_yolo_bboxes(pred[0], yolo1) + \
+    #              detect_yolo_bboxes(pred[1], yolo2) + \
+    #              detect_yolo_bboxes(pred[2], yolo3)
+    #print(all_bboxes)
+
+    return centered_objects_present(pred[0], yolo1) + \
+           centered_objects_present(pred[1], yolo2) + \
+           centered_objects_present(pred[2], yolo3)
+
+
+def get_prediction(sess: rt.InferenceSession, png_path: Path) -> List[np.ndarray]:
     pngdata = png.Reader(filename=png_path).asRGB8()
     image_np = np.vstack(pngdata[2])
 
@@ -121,15 +134,15 @@ def get_reward(png_path: Path) -> float:
         input_binding_name: image_np
     })
 
-    # all_bboxes = detect_yolo_bboxes(pred[0], yolo1) + \
-    #              detect_yolo_bboxes(pred[1], yolo2) + \
-    #              detect_yolo_bboxes(pred[2], yolo3)
-    #print(all_bboxes)
+    return pred
 
-    return centered_objects_present(pred[0], yolo1) + \
-           centered_objects_present(pred[1], yolo2) + \
-           centered_objects_present(pred[2], yolo3)
+
+def get_intermediate_layer(pred: List[np.ndarray]) -> np.ndarray:
+    return pred[3]
+
 
 if __name__ == "__main__":
-    reward = get_reward(Path("imgs", "1598832182944358229.png"))
+    sess = rt.InferenceSession("C:\\Users\jakep\Desktop\yolov5s.onnx")
+    pred = get_prediction(sess, Path("imgs", "1598832182944358229.png"))
+    reward = get_reward(pred)
     print(f"Reward: {reward}")

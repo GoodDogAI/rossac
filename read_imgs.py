@@ -4,7 +4,10 @@ import json
 import argparse
 import png
 import os.path
+import numpy as np
 import onnxruntime as rt
+
+from yolo_reward import get_prediction, get_reward, get_intermediate_layer
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument("--camera_topic", default='/camera/infra2/image_rect_raw')
@@ -30,6 +33,7 @@ for bag_file in args.bags:
 
     cmd_file = open(bag_file + ".cmd_vels", 'w')
     dynamixel_file = open(bag_file + ".dynamixel", 'w')
+    reward_file = open(bag_file + ".rewards", 'w')
 
     for topic, msg, ts in bag.read_messages([args.camera_topic, '/cmd_vel', '/dynamixel_workbench/dynamixel_state']):
         #if topic not in seen:
@@ -48,9 +52,19 @@ for bag_file in args.bags:
                     png.from_array(img, mode=img_mode).save(img_name)
 
                 # Save off the intermediate state which is passed as input to the MLP-SAC
+                pred = get_prediction(sess, img_name)
+                intermediate = get_intermediate_layer(pred)
+
+                intermediate_name = os.path.join(os.path.dirname(bag_file), 'imgs', '{}.intermediate.npy'.format(full_ts))
+                np.save(intermediate_name, intermediate, allow_pickle=False)
 
                 # Save off the reward score, for that image
-
+                reward = get_reward(pred)
+                json.dump({
+                    "ts": full_ts,
+                    "reward": reward,
+                }, reward_file)
+                reward_file.write("\n")
             elif topic == '/dynamixel_workbench/dynamixel_state':
                 json.dump({
                     "ts": full_ts,
