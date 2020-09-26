@@ -23,8 +23,9 @@ for bag_file in args.bags:
     seen = set()
 
     cmd_file = open(bag_file + ".cmd_vels", 'w')
+    dynamixel_file = open(bag_file + ".dynamixel", 'w')
 
-    for topic, msg, ts in bag.read_messages([args.camera_topic, '/cmd_vel']):
+    for topic, msg, ts in bag.read_messages([args.camera_topic, '/cmd_vel', '/dynamixel_workbench/dynamixel_state']):
         #if topic not in seen:
             full_ts = ts.nsecs + ts.secs * 1000000000
             print("{} @ {}".format(topic, full_ts))
@@ -39,6 +40,8 @@ for bag_file in args.bags:
 
                     img_mode = 'L' if "infra" in args.camera_topic else 'RGB'
                     png.from_array(img, mode=img_mode).save(img_name)
+            elif topic == '/dynamixel_workbench/dynamixel_state':
+                dynamixel_file.write(f'{{ "ts": "{full_ts}", "pan_state": {msg.dynamixel_state[0].present_position}, "tilt_state": {msg.dynamixel_state[1].present_position} }}\n')
             else:
                 print(dir(msg))
                 cmd_file.write('{{ "ts": "{}", "linear": [{},{},{}], "angular": [{},{},{}] }}\n'
