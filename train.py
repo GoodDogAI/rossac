@@ -137,21 +137,20 @@ if __name__ == '__main__':
     backbone_outputs = load_backbone_outputs(opt.read_dir)
     print("backbone outputs: " + str(len(backbone_outputs)))
 
-    interpolated = interpolate_events(cmdvels, [backbone_outputs], max_gap_ns=1000*1000*1000)
+    interpolated = interpolate_events(cmdvels, [dynamixel, rewards, backbone_outputs], max_gap_ns=1000*1000*1000)
     print("matching events: " + str(len(interpolated)))
 
     # every 1000 entries in replay are ~500MB
     sac = SoftActorCritic(RobotEnvironment, replay_size=20000)
 
     for i in range(len(interpolated)-1):
-        ts, act, observations = interpolated[i]
-        _, _, future_observations = interpolated[i+1]
-        reward = np.average(future_observations[0])
+        ts, act, (pantilt, reward, backbone) = interpolated[i]
+        _, _, (future_pantilt, future_reward, future_backbone) = future_observations = interpolated[i+1]
         end_of_episode = i%100 == 99
-        sac.replay_buffer.store(_flatten(observations[0]),
-            np.concatenate([act, np.array([700, 700])]),
+        sac.replay_buffer.store(_flatten(backbone),
+            np.concatenate([act, pantilt]),
             rew=reward,
-            next_obs=_flatten(future_observations[0]),
+            next_obs=_flatten(future_backbone),
             done=end_of_episode)       
 
     print("filled in replay buffer")
