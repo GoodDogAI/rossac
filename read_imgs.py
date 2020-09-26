@@ -11,7 +11,8 @@ from yolo_reward import get_prediction, get_reward, get_intermediate_layer
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument("--camera_topic", default='/camera/infra2/image_rect_raw')
-arg_parser.add_argument('--onnx', type=str, default='./yolov5s.onnx', help='onnx weights path')
+arg_parser.add_argument("--onnx", type=str, default='./yolov5s.onnx', help='onnx weights path')
+arg_parser.add_argument("--output", type=str, default="./imgs")
 arg_parser.add_argument("bags", nargs='+')
 args = arg_parser.parse_args()
 
@@ -31,9 +32,9 @@ for bag_file in args.bags:
     bag = rosbag.Bag(bag_file, 'r')
     seen = set()
 
-    cmd_file = open(bag_file + ".cmd_vels", 'w')
-    dynamixel_file = open(bag_file + ".dynamixel", 'w')
-    reward_file = open(bag_file + ".rewards", 'w')
+    cmd_file = open(os.path.join(args.output, os.path.basename(bag_file) + ".cmd_vels"), 'w')
+    dynamixel_file = open(os.path.join(args.output, os.path.basename(bag_file) + ".dynamixel"), 'w')
+    reward_file = open(os.path.join(args.output, os.path.basename(bag_file) + ".rewards"), 'w')
 
     for topic, msg, ts in bag.read_messages([args.camera_topic, '/cmd_vel', '/dynamixel_workbench/dynamixel_state']):
         #if topic not in seen:
@@ -42,7 +43,7 @@ for bag_file in args.bags:
             if topic == args.camera_topic:
                 print("{}x{} {}; row bytes: {}".format(msg.width, msg.height, msg.encoding, msg.step))
                 print(type(msg.data))
-                img_name = os.path.join(os.path.dirname(bag_file), 'imgs', '{}.png'.format(full_ts))
+                img_name = os.path.join(args.output, '{}.png'.format(full_ts))
                 if not os.path.isfile(img_name):
                     img = []
                     for i in range(0, len(msg.data), msg.step):
@@ -55,7 +56,7 @@ for bag_file in args.bags:
                 pred = get_prediction(sess, img_name)
                 intermediate = get_intermediate_layer(pred)
 
-                intermediate_name = os.path.join(os.path.dirname(bag_file), 'imgs', '{}.intermediate.npy'.format(full_ts))
+                intermediate_name = os.path.join(args.output, '{}.intermediate.npy'.format(full_ts))
                 np.save(intermediate_name, intermediate, allow_pickle=False)
 
                 # Save off the reward score, for that image

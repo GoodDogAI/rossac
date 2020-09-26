@@ -154,11 +154,14 @@ if __name__ == '__main__':
             done=end_of_episode)       
 
     print("filled in replay buffer")
-    
+
+    if not os.path.exists('checkpoints'):
+        os.makedirs('checkpoints')
+
     for i in range(1000*1000*1000):
         sac.train(batch_size=32, batch_count=32)
         print('LossQ: ' + str(sac.logger.epoch_dict['LossQ'][-1]) +
               '  LossPi: ' + str(sac.logger.epoch_dict['LossPi'][-1]))
-        model_name = f"sac-{i:05d}.onnx"
+        model_name = f"checkpoints/sac-{i:05d}.onnx"
         export(sac.ac, model_name)
         print("saved " + model_name)
