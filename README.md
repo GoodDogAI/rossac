@@ -12,3 +12,4 @@ TODOs:
  - [ ] Verify the squashed MLP gaussian is outputting correctly (https://github.com/thu-ml/tianshou/pull/333)
  - [ ] What's the point of the `end_of_episode` flag. It changes how the Bellman backup is calculated, but our episodes are more or less continuous 
  - [ ] Is the ONNXNormal distribution that we wrote perfectly matching the Pytorch original version? Write unit tests.
+ - [ ] Write a script that can take an SAC onnx file, and then run it end-to-end and output the actions. Are those action outputs reasonable on the reply buffer, do they match on both the offline and online bot code running TensorRT?
