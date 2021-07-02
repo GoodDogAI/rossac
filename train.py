@@ -110,7 +110,7 @@ def load_backbone_outputs(dir_path):
         no_ext2, extra_ext = os.path.splitext(no_ext)
         if os.path.isfile(full_name) and ext == '.npy':
             ts = int(no_ext2 or no_ext)
-            outputs[ts] = np.load(full_name)
+            outputs[ts] = np.load(full_name, mmap_mode='r')
     
     return outputs
 
@@ -121,6 +121,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--read-dir', type=str, help='directory with images, backbones, and json files')
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
+    parser.add_argument('--max-samples', type=int, default=20000, help='max number of training samples to load at once')
     opt = parser.parse_args()
 
     print("CUDA: " + str(torch.cuda.is_available()))
@@ -137,18 +138,18 @@ if __name__ == '__main__':
     backbone_outputs = load_backbone_outputs(opt.read_dir)
     print("backbone outputs: " + str(len(backbone_outputs)))
 
-    interpolated = interpolate_events(cmdvels, [dynamixel, rewards, backbone_outputs], max_gap_ns=1000*1000*1000)
+    interpolated = interpolate_events(backbone_outputs, [cmdvels, dynamixel, rewards], max_gap_ns=1000*1000*1000)
     print("matching events: " + str(len(interpolated)))
 
     # every 1000 entries in replay are ~500MB
-    sac = SoftActorCritic(RobotEnvironment, replay_size=20000)
+    sac = SoftActorCritic(RobotEnvironment, replay_size=opt.max_samples)
 
-    for i in range(len(interpolated)-1):
-        ts, act, (pantilt, reward, backbone) = interpolated[i]
-        _, _, (future_pantilt, future_reward, future_backbone) = future_observations = interpolated[i+1]
+    for i in range(min(len(interpolated)-1, opt.max_samples)):
+        ts, backbone, (cmdvel, pantilt, reward) = interpolated[i]
+        _, future_backbone, (future_cmdvel, future_pantilt, future_reward) = future_observations = interpolated[i+1]
         end_of_episode = i%100 == 99
-        sac.replay_buffer.store(_flatten(backbone),
-            np.concatenate([act, pantilt]),
+        sac.replay_buffer.store(obs=_flatten(backbone),
+            act=np.concatenate([cmdvel, pantilt]),
             rew=reward,
             next_obs=_flatten(future_backbone),
             done=end_of_episode)       
