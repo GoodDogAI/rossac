@@ -72,9 +72,12 @@ class SquashedGaussianMLPActor(nn.Module):
 
         pi_action = torch.tanh(pi_action)
 
+        pi_action = pi_action * torch.from_numpy(self.act_space.high)
+
+        # TODO Commented out to verify logprob computation
         # Now scale each one to the range of the action space
-        pi_action = pi_action * torch.from_numpy((self.act_space.high - self.act_space.low) / 2)
-        pi_action = pi_action + torch.from_numpy((self.act_space.high + self.act_space.low) / 2)
+        #pi_action = pi_action * torch.from_numpy((self.act_space.high - self.act_space.low) / 2)
+        #pi_action = pi_action + torch.from_numpy((self.act_space.high + self.act_space.low) / 2)
 
         return pi_action, logp_pi
 
@@ -92,7 +95,7 @@ class MLPQFunction(nn.Module):
 class MLPActorCritic(nn.Module):
 
     def __init__(self, observation_space, action_space, hidden_sizes=(256,256),
-                 activation=nn.ReLU):
+                 activation=nn.SELU):
         super().__init__()
 
         obs_dim = observation_space.shape[0]

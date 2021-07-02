@@ -142,6 +142,8 @@ class SoftActorCritic:
 
         # Create actor-critic module and target networks
         self.ac = actor_critic(self.env.observation_space, self.env.action_space, **ac_kwargs)
+
+        self.ac = self.ac
         self.ac_targ = deepcopy(self.ac)
         self.ac = self._to_device(self.ac)
         self.ac_targ = self._to_device(self.ac_targ)
@@ -211,6 +213,10 @@ class SoftActorCritic:
         return loss_pi, pi_info
 
     def update(self, data):
+        # Take both observations to the GPU for faster training
+        # for key in data.keys():
+        #     data[key] = data[key].cuda()
+
         # First run one gradient descent step for Q1 and Q2
         self.q_optimizer.zero_grad()
         loss_q, q_info = self.compute_loss_q(data)
