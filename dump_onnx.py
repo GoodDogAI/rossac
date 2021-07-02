@@ -13,7 +13,7 @@ def export(sac, file_name):
     sac.pi.deterministic = True
     sac.pi.with_logprob = False
 
-    torch.onnx.export(sac.pi, (sample_input,), file_name, verbose=True, opset_version=12,
+    torch.onnx.export(sac.pi, (sample_input,), file_name, verbose=False, opset_version=12,
                       input_names=["yolo_intermediate"], output_names=["actions"])
 
     sac.pi.deterministic, sac.pi.with_logprob = orig_det, orig_logprob

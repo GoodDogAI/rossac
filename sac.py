@@ -205,7 +205,8 @@ class SoftActorCritic:
         loss_pi = (self.alpha * logp_pi - q_pi).mean()
 
         # Useful info for logging
-        pi_info = dict(LogPi=logp_pi.detach().numpy())
+        pi_info = dict(LogPi=logp_pi.detach().numpy(),
+                       Pi=pi.detach().numpy())
 
         return loss_pi, pi_info
 

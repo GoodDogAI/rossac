@@ -147,22 +147,26 @@ if __name__ == '__main__':
     for i in range(min(len(interpolated)-1, opt.max_samples)):
         ts, backbone, (cmdvel, pantilt, reward) = interpolated[i]
         _, future_backbone, (future_cmdvel, future_pantilt, future_reward) = future_observations = interpolated[i+1]
-        end_of_episode = i%100 == 99
+
         sac.replay_buffer.store(obs=_flatten(backbone),
             act=np.concatenate([cmdvel, pantilt]),
             rew=reward,
             next_obs=_flatten(future_backbone),
-            done=end_of_episode)       
+            done=False)
 
     print("filled in replay buffer")
 
     if not os.path.exists('checkpoints'):
         os.makedirs('checkpoints')
 
+    np.set_printoptions(precision=2)
+
     for i in range(1000*1000*1000):
         sac.train(batch_size=32, batch_count=32)
-        print('LossQ: ' + str(sac.logger.epoch_dict['LossQ'][-1]) +
-              '  LossPi: ' + str(sac.logger.epoch_dict['LossPi'][-1]))
+        print(f"  LossQ: {sum(sac.logger.epoch_dict['LossQ'])/len(sac.logger.epoch_dict['LossQ'])}", end=None)
+        print(f"  LossPi: {sum(sac.logger.epoch_dict['LossPi'])/len(sac.logger.epoch_dict['LossPi'])}", end=None)
+        sample_action = sac.logger.epoch_dict['Pi'][0][0]
+        print(f"  Sample Action: velocity {sample_action[0]:.2f}  angle {sample_action[1]:.2f}  pan {sample_action[2]:.1f}  tilt {sample_action[3]:.1f}")
         model_name = f"checkpoints/sac-{i:05d}.onnx"
         export(sac.ac, model_name)
         print("saved " + model_name)
