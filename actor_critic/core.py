@@ -47,9 +47,10 @@ class SquashedGaussianMLPActor(nn.Module):
         log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
         std = torch.exp(log_std)
 
-        mean_mus = mu.mean(axis=0, keepdim=True)
-        diff = (mu - mean_mus).abs().sum()
-        print(f"Mu diff: {diff}")
+        # Un comment in order to watch if mu's are collapsing back to constant values
+        # mean_mus = mu.mean(axis=0, keepdim=True)
+        # diff = (mu - mean_mus).abs().sum()
+        # print(f"Mu diff: {diff.detach().cpu()}")
 
         # Pre-squash distribution and sample
         pi_distribution = ONNXNormal(mu, std)
@@ -72,7 +73,7 @@ class SquashedGaussianMLPActor(nn.Module):
 
         pi_action = torch.tanh(pi_action)
 
-        pi_action = pi_action * torch.from_numpy(self.act_space.high)
+        pi_action = pi_action * torch.from_numpy(self.act_space.high).to(pi_action.device)
 
         # TODO Commented out to verify logprob computation
         # Now scale each one to the range of the action space

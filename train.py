@@ -127,6 +127,13 @@ if __name__ == '__main__':
 
     print("CUDA: " + str(torch.cuda.is_available()))
 
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        print("Using CUDA")
+    else:
+        device = torch.device("cpu")
+        print("Using CPU")
+
     cmdvels = load_json_data(opt.read_dir, '.cmd_vels', lambda json: np.asarray([json['linear'][0]] + [json['angular'][2]]))
     print("cmdvels: " + str(len(cmdvels)))
 
@@ -143,7 +150,7 @@ if __name__ == '__main__':
     print("matching events: " + str(len(interpolated)))
 
     # every 1000 entries in replay are ~500MB
-    sac = SoftActorCritic(RobotEnvironment, replay_size=opt.max_samples)
+    sac = SoftActorCritic(RobotEnvironment, replay_size=opt.max_samples, device=device)
 
     for i in range(min(len(interpolated)-1, opt.max_samples)):
         ts, backbone, (cmdvel, pantilt, reward) = interpolated[i]
@@ -169,5 +176,7 @@ if __name__ == '__main__':
         sample_action = sac.logger.epoch_dict['Pi'][-1][0]
         print(f"  Sample Action: velocity {sample_action[0]:.2f}  angle {sample_action[1]:.2f}  pan {sample_action[2]:.1f}  tilt {sample_action[3]:.1f}")
         model_name = f"checkpoints/sac-{i:05d}.onnx"
-        export(sac.ac, model_name)
-        print("saved " + model_name)
+
+        if i % 20 == 0:
+            export(sac.ac, device, model_name)
+            print("saved " + model_name)
