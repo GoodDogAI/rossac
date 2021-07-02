@@ -121,6 +121,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--read-dir', type=str, help='directory with images, backbones, and json files')
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
+    parser.add_argument('--batch-size', type=int, default=32, help='number of samples per training step')
     parser.add_argument('--max-samples', type=int, default=20000, help='max number of training samples to load at once')
     opt = parser.parse_args()
 
@@ -162,10 +163,10 @@ if __name__ == '__main__':
     np.set_printoptions(precision=2)
 
     for i in range(1000*1000*1000):
-        sac.train(batch_size=32, batch_count=32)
-        print(f"  LossQ: {sum(sac.logger.epoch_dict['LossQ'])/len(sac.logger.epoch_dict['LossQ'])}", end=None)
-        print(f"  LossPi: {sum(sac.logger.epoch_dict['LossPi'])/len(sac.logger.epoch_dict['LossPi'])}", end=None)
-        sample_action = sac.logger.epoch_dict['Pi'][0][0]
+        sac.train(batch_size=opt.batch_size, batch_count=32)
+        print(f"  LossQ: {sum(sac.logger.epoch_dict['LossQ'][-opt.batch_size:])/opt.batch_size}", end=None)
+        print(f"  LossPi: {sum(sac.logger.epoch_dict['LossPi'][-opt.batch_size:])/opt.batch_size}", end=None)
+        sample_action = sac.logger.epoch_dict['Pi'][-1][0]
         print(f"  Sample Action: velocity {sample_action[0]:.2f}  angle {sample_action[1]:.2f}  pan {sample_action[2]:.1f}  tilt {sample_action[3]:.1f}")
         model_name = f"checkpoints/sac-{i:05d}.onnx"
         export(sac.ac, model_name)

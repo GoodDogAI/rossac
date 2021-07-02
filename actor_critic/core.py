@@ -47,6 +47,10 @@ class SquashedGaussianMLPActor(nn.Module):
         log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
         std = torch.exp(log_std)
 
+        mean_mus = mu.mean(axis=0, keepdim=True)
+        diff = (mu - mean_mus).abs().sum()
+        print(f"Mu diff: {diff}")
+
         # Pre-squash distribution and sample
         pi_distribution = ONNXNormal(mu, std)
         if self.deterministic:
