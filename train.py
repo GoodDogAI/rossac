@@ -178,5 +178,7 @@ if __name__ == '__main__':
         model_name = f"checkpoints/sac-{i:05d}.onnx"
 
         if i % 20 == 0:
+            action_samples = sac.sample_actions(8).cpu()
+            print(action_samples)
             export(sac.ac, device, model_name)
             print("saved " + model_name)
