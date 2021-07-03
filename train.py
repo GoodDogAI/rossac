@@ -6,6 +6,7 @@ from typing import Dict, Any, Callable
 
 import numpy as np
 import torch
+import tensorflow.compat.v1 as tf
 
 from bot_env import RobotEnvironment
 from actor_critic.core import MLPActorCritic
@@ -13,6 +14,8 @@ from sac import SoftActorCritic
 from dump_onnx import export
 
 DEFAULT_MAX_GAP_SECONDS = 5
+
+tf.disable_v2_behavior()
 
 def interpolate(pre_ts, pre_data, ts, post_ts, post_data):
     interval_len = post_ts - pre_ts
