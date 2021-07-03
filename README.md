@@ -16,3 +16,4 @@ TODOs:
  - [ ] In the Spinningup ai examples, they calculate a Reward-to-go for an episode, discounting the reward for each step in that episode. But our current code just uses the instantaneous reward at each step.
  - [ ] Make observation vector richer (actual wheel speed, head acceleration, etc)
  - [ ] Make action space a "rate of change" instead of absolute
+ - [ ] Add WANDB support for tracking training runs.
