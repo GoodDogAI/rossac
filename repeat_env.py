@@ -7,7 +7,18 @@ from actor_critic.core import MLPActorCritic
 from sac import SoftActorCritic
 
 class RepeatObservationEnv:
-    action_space = observation_space = Box(low=-1.0, high=+1.0, shape=(1,), dtype=np.float32)
+    LOW = -1
+    HIGH = +2
+
+    ACT_SCALE = 100
+
+    observation_space = Box(low=LOW, high=HIGH, shape=(1,), dtype=np.float32)
+    action_space = Box(low=LOW*ACT_SCALE, high=HIGH*ACT_SCALE, shape=(1,), dtype=np.float32)
+
+    @staticmethod
+    def get_reward(obs, act):
+        return (RepeatObservationEnv.HIGH - RepeatObservationEnv.LOW
+                - abs(act/RepeatObservationEnv.ACT_SCALE - obs))
 
 if __name__ == '__main__':
     if torch.cuda.is_available():
@@ -22,11 +33,11 @@ if __name__ == '__main__':
 
     sac = SoftActorCritic(RepeatObservationEnv, replay_size=RANDOM_SAMPLE_COUNT, device=device)
 
-    obs = random.uniform(-1, +1)
+    obs = RepeatObservationEnv.observation_space.sample()
     for i in range(RANDOM_SAMPLE_COUNT):
-        act = random.uniform(-1, +1)
-        reward = 2 - abs(act-obs)
-        new_obs = random.uniform(-1, +1)
+        act = RepeatObservationEnv.action_space.sample()
+        reward = RepeatObservationEnv.get_reward(obs=obs, act=act)
+        new_obs = RepeatObservationEnv.observation_space.sample()
         done = False # or (i-1) % MAX_STEPS == 0
         
         sac.replay_buffer.store(obs=obs, act=act, rew=reward, next_obs=new_obs, done=done)
@@ -43,3 +54,4 @@ if __name__ == '__main__':
         if i % 20 == 19:
             action_samples = sac.sample_actions(8).cpu()
             print(action_samples)
+            print()
