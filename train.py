@@ -1,6 +1,6 @@
 import argparse
 import os.path
-import sys
+import wandb
 import json
 from typing import Dict, Any, Callable
 
@@ -16,6 +16,8 @@ from dump_onnx import export
 DEFAULT_MAX_GAP_SECONDS = 5
 
 tf.disable_v2_behavior()
+wandb.init(project="sac-series1", entity="armyofrobots")
+
 
 def interpolate(pre_ts, pre_data, ts, post_ts, post_data):
     interval_len = post_ts - pre_ts
@@ -154,7 +156,15 @@ if __name__ == '__main__':
     # every 1000 entries in replay are ~500MB
     sac = SoftActorCritic(RobotEnvironment, replay_size=opt.max_samples, device=device)
 
-    for i in range(min(len(interpolated)-1, opt.max_samples)):
+    # Save basic params to wandb configuration
+    wandb.config.read_dir = opt.read_dir
+    wandb.config.num_samples = min(len(interpolated)-1, opt.max_samples)
+    wandb.config.batch_size = opt.batch_size
+    wandb.config.device = str(device)
+
+    wandb.watch(sac.ac, log="gradients", log_freq=100)  # Log gradients periodically
+
+    for i in range(wandb.config.num_samples):
         ts, backbone, (cmdvel, pantilt, reward) = interpolated[i]
         _, future_backbone, (future_cmdvel, future_pantilt, future_reward) = future_observations = interpolated[i+1]
 
@@ -175,6 +185,12 @@ if __name__ == '__main__':
         sac.train(batch_size=opt.batch_size, batch_count=32)
         print(f"  LossQ: {sum(sac.logger.epoch_dict['LossQ'][-opt.batch_size:])/opt.batch_size}", end=None)
         print(f"  LossPi: {sum(sac.logger.epoch_dict['LossPi'][-opt.batch_size:])/opt.batch_size}", end=None)
+
+        wandb.log({
+            "LossQ": sum(sac.logger.epoch_dict['LossQ'][-opt.batch_size:])/opt.batch_size,
+            "LossPi": sum(sac.logger.epoch_dict['LossPi'][-opt.batch_size:])/opt.batch_size,
+        })
+
         sample_action = sac.logger.epoch_dict['Pi'][-1][0]
         print(f"  Sample Action: velocity {sample_action[0]:.2f}  angle {sample_action[1]:.2f}  pan {sample_action[2]:.1f}  tilt {sample_action[3]:.1f}")
         model_name = f"checkpoints/sac-{i:05d}.onnx"

@@ -12,3 +12,6 @@ pypng
 
 # For running the same ONNX models as run on the bot locally, for loss function estimation
 onnxruntime
+
+# For reporting and saving training logs
+wandb
