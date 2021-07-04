@@ -270,6 +270,17 @@ class SoftActorCritic:
             batch = self.replay_buffer.sample_batch(batch_size)
             self.update(data=batch)
 
+    def sample_actions(self, batch_size):
+        batch = self.replay_buffer.sample_batch(batch_size)
+        o = batch['obs'].to(device=self.device)
+        det = self.ac.pi.deterministic
+        try:
+            self.ac.pi.deterministic = True
+            pi, logp_pi = self.ac.pi(o)
+            return pi
+        finally:
+            self.ac.pi.deterministic = det
+
     def collect_observations(self, steps, use_brain=True):
         ep_len, ep_ret = 0, 0
         o = self.env.reset()

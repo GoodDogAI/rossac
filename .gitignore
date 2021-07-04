@@ -1,3 +1,4 @@
+checkpoints/
 venv/*
 
 #Ignore thumbnails created by Windows
