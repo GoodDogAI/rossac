@@ -123,15 +123,14 @@ if __name__ == '__main__':
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
     parser.add_argument('--batch-size', type=int, default=32, help='number of samples per training step')
     parser.add_argument('--max-samples', type=int, default=20000, help='max number of training samples to load at once')
+    parser.add_argument('--cpu', default=False, action="store_true", help='run training on CPU only')
     opt = parser.parse_args()
 
-    print("CUDA: " + str(torch.cuda.is_available()))
-
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and not opt.cpu:
         device = torch.device("cuda")
         print("Using CUDA")
     else:
-        device = torch.device("cpu")
+        device = None
         print("Using CPU")
 
     cmdvels = load_json_data(opt.read_dir, '.cmd_vels', lambda json: np.asarray([json['linear'][0]] + [json['angular'][2]]))
