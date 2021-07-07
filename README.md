@@ -19,3 +19,4 @@ TODOs:
  - [X] Add WANDB support for tracking training runs.
  - [ ] Currently the action-space uses the sensed pan-tilt position, and not the actual commanded pan-tilt position.
  - [ ] Renormalize the odrive feedback into cmdvel units, and pass it into the training as an observation.
+ - [ ] Pass in time since last observation as an observation itself.
