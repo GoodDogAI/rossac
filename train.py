@@ -172,7 +172,7 @@ if __name__ == '__main__':
             act=np.concatenate([cmdvel, pantilt]),
             rew=reward,
             next_obs=_flatten(future_backbone),
-            done=False)
+            done=i%512==0)
 
     print("filled in replay buffer")
 
