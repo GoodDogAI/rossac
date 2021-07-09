@@ -5,7 +5,11 @@ Features:
  - Interpolate between the dynamixel and velocity commands between frames to get consistent snapshots of the robot state at a given timestamp
  - Train a SAC model given rosbags as preprocessed above
 
-Status: Not working, in test-mode on a real robot, all of the outputs are either very close to zero, or just constants
+### Status:
+- July 9th, 2021 Gathered new bag files with additional data (wheel speeds, head pan/tilt commands not just current positions)
+- July 8th, 2021 Victor trained a model using August 2020 bag files. It spins the wheels slowly in one direction, with mild variability, the head pan is almost constant, and the head tilt goes up and down a lot. 
+  The activity on the head tilt is correlated loosely with what objects are located in the current image.
+- July 1st, 2021 Not working, in test-mode on a real robot, all of the outputs are either very close to zero, or just constants
 
 TODOs:
  - [ ] Make sure that the intermediate layers for a given camera input are the same when we re-calculate them on the training PC, or else save the raw intermediate YOLO layers into the bags themselves
