@@ -145,6 +145,12 @@ if __name__ == '__main__':
     print("dynamixel: " + str(len(dynamixel)))
 
     rewards = load_json_data(opt.read_dir, '.rewards', lambda json: np.asarray([json['reward']]))
+    reward_delay = 260000000 # ~6 entries
+    delayed_rewards = dict()
+    for ts, v in rewards.items():
+        delayed_rewards[ts + reward_delay] = v
+
+    rewards = delayed_rewards
     print("rewards: " + str(len(rewards)))
 
     backbone_outputs = load_backbone_outputs(opt.read_dir)
@@ -152,6 +158,8 @@ if __name__ == '__main__':
 
     interpolated = interpolate_events(backbone_outputs, [cmdvels, dynamixel, rewards], max_gap_ns=1000*1000*1000)
     print("matching events: " + str(len(interpolated)))
+
+    del backbone_outputs, cmdvels, dynamixel, rewards
 
     # every 1000 entries in replay are ~500MB
     sac = SoftActorCritic(RobotEnvironment, replay_size=opt.max_samples, device=device)
