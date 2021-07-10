@@ -15,3 +15,6 @@ onnxruntime
 
 # For reporting and saving training logs
 wandb
+
+# For unit testing (QuickCheck style)
+hypothesis
