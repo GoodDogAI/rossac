@@ -12,13 +12,17 @@ def export(sac, device, file_name):
 
     # Temporarily set the parameters needed for deterministic exports
     orig_det, orig_logprob = sac.pi.deterministic, sac.pi.with_logprob
+    orig_stddev = sac.pi.with_stddev
     sac.pi.deterministic = True
-    sac.pi.with_logprob = True
+    sac.pi.with_logprob = False
+    sac.pi.with_stddev = True
+
 
     torch.onnx.export(sac.pi, (sample_input,), file_name, verbose=False, opset_version=12,
-                      input_names=["yolo_intermediate"], output_names=["actions", "log_prob"])
+                      input_names=["yolo_intermediate"], output_names=["actions", "stddev"])
 
     sac.pi.deterministic, sac.pi.with_logprob = orig_det, orig_logprob
+    sac.pi.with_stddev = orig_stddev
 
 
 if __name__ == '__main__':

@@ -39,8 +39,12 @@ class SquashedGaussianMLPActor(nn.Module):
 
         self.deterministic = deterministic
         self.with_logprob = with_logprob
+        self.with_stddev = False
 
     def forward(self, obs):
+        if self.with_logprob and self.with_stddev:
+            raise NotImplementedError
+
         net_out = self.net(obs)
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
@@ -77,7 +81,10 @@ class SquashedGaussianMLPActor(nn.Module):
         pi_action = pi_action * torch.from_numpy((self.act_space.high - self.act_space.low) / 2).to(pi_action.device)
         pi_action = pi_action + torch.from_numpy((self.act_space.high + self.act_space.low) / 2).to(pi_action.device)
 
-        return pi_action, logp_pi
+        if self.with_stddev:
+            return pi_action, std
+        else:
+            return pi_action, logp_pi
 
 
 class MLPQFunction(nn.Module):
