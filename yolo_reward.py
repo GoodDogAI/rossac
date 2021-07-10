@@ -101,7 +101,7 @@ def centered_objects_present(prediction: np.ndarray, kernel: YoloKernel) -> floa
     return np.sum(all_probs / all_centers)
 
 
-def get_reward(pred: List[np.ndarray]) -> float:
+def sum_centered_objects_present(pred: List[np.ndarray]) -> float:
     # all_bboxes = detect_yolo_bboxes(pred[0], yolo1) + \
     #              detect_yolo_bboxes(pred[1], yolo2) + \
     #              detect_yolo_bboxes(pred[2], yolo3)
@@ -112,7 +112,7 @@ def get_reward(pred: List[np.ndarray]) -> float:
            centered_objects_present(pred[2], yolo3)
 
 
-def get_prediction(sess: rt.InferenceSession, png_path: Path) -> List[np.ndarray]:
+def get_prediction(sess: rt.InferenceSession, png_path: str) -> List[np.ndarray]:
     pngdata = png.Reader(filename=png_path).asRGB8()
     image_np = np.vstack(pngdata[2])
 
