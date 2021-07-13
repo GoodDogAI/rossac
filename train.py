@@ -207,6 +207,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=32, help='number of samples per training step')
     parser.add_argument('--max-samples', type=int, default=20000, help='max number of training samples to load at once')
     parser.add_argument('--cpu', default=False, action="store_true", help='run training on CPU only')
+    parser.add_argument('--reward-delay-ms', type=int, default=0, help='delay reward from action by the specified amount of milliseconds')
     opt = parser.parse_args()
 
     if torch.cuda.is_available() and not opt.cpu:
@@ -245,6 +246,9 @@ if __name__ == '__main__':
     print(f"Loaded {len(all_entries.vbus)} vbus")
     print(f"Took {time.perf_counter() - start_load}")
 
+    if opt.reward_delay_ms > 0:
+        all_entries.reward = { ts + opt.reward_delay_ms * 1000000: reward for ts, reward in all_entries.reward.items() }
+
     interpolated = interpolate_events(all_entries.yolo_intermediate, [all_entries.reward,
                                                                       all_entries.cmd_vel,
                                                                       all_entries.dynamixel_command_state,
@@ -269,6 +273,7 @@ if __name__ == '__main__':
     wandb.config.alpha = sac.alpha
     wandb.config.dropout = sac.dropout
     wandb.config.device = str(device)
+    wandb.config.reward_delay_ms = opt.reward_delay_ms
 
     wandb.watch(sac.ac, log="gradients", log_freq=100)  # Log gradients periodically
 
