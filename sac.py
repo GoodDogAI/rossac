@@ -129,6 +129,7 @@ class SoftActorCritic:
         self.alpha = alpha
         self.gamma = gamma
         self.polyak = polyak
+        self.lr = lr
 
         self.device = device
 

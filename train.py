@@ -314,6 +314,11 @@ if __name__ == '__main__':
     wandb.config.reward_func_name = opt.reward
     wandb.config.num_samples = min(len(interpolated)-1, opt.max_samples)
     wandb.config.batch_size = opt.batch_size
+    wandb.config.gamma = sac.gamma
+    wandb.config.polyak = sac.polyak
+    wandb.config.lr = sac.lr
+    wandb.config.alpha = sac.alpha
+    wandb.config.dropout = sac.dropout
     wandb.config.device = str(device)
 
     wandb.watch(sac.ac, log="gradients", log_freq=100)  # Log gradients periodically
