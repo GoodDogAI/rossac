@@ -183,12 +183,14 @@ if __name__ == '__main__':
 
     for i in range(1000*1000*1000):
         sac.train(batch_size=opt.batch_size, batch_count=32)
-        print(f"  LossQ: {sum(sac.logger.epoch_dict['LossQ'][-opt.batch_size:])/opt.batch_size}", end=None)
-        print(f"  LossPi: {sum(sac.logger.epoch_dict['LossPi'][-opt.batch_size:])/opt.batch_size}", end=None)
+        lossQ = sum(sac.logger.epoch_dict['LossQ'][-opt.batch_size:])/opt.batch_size
+        lossPi = sum(sac.logger.epoch_dict['LossPi'][-opt.batch_size:])/opt.batch_size
+        print(f"  LossQ: {lossQ}", end=None)
+        print(f"  LossPi: {lossPi}", end=None)
 
         wandb.log({
-            "LossQ": sum(sac.logger.epoch_dict['LossQ'][-opt.batch_size:])/opt.batch_size,
-            "LossPi": sum(sac.logger.epoch_dict['LossPi'][-opt.batch_size:])/opt.batch_size,
+            "LossQ": lossQ,
+            "LossPi": lossPi,
         })
 
         sample_action = sac.logger.epoch_dict['Pi'][-1][0]
@@ -198,5 +200,9 @@ if __name__ == '__main__':
         if i % 20 == 0:
             action_samples = sac.sample_actions(8).cpu()
             print(action_samples)
-            export(sac.ac, device, model_name)
+            samples_name = model_name + ".samples"
+            with open(samples_name, 'w') as samples_file:
+                print(f"  LossQ: {lossQ}", file=samples_file)
+                print(f"  LossPi: {lossPi}", file=samples_file)
+                print(action_samples, file=samples_file)
             print("saved " + model_name)
