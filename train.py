@@ -3,7 +3,6 @@ import os.path
 import time
 
 import wandb
-import json
 import png
 import glob
 import rosbag
@@ -86,56 +85,6 @@ def interpolate_events(primary, secondaries, max_gap_ns):
         result.append((ts, event, interpolated))
 
     return result
-
-
-def _simulate_trace(ticks, primary_interval, secondary_probs):
-    import random
-
-    primary = dict()
-    secondaries = list(map(lambda x: dict(), secondary_probs))
-    for tick in range(ticks):
-        if tick % primary_interval == 0:
-            primary[tick] = tick
-        for i, prob in enumerate(secondary_probs):
-            if prob > random.random():
-                secondaries[i][tick] = tick
-    return primary, secondaries
-
-# test_primary, test_secondaries = _simulate_trace(100, 5, [0.3, 0.5])
-# test_interpolated = interpolate_events(test_primary, test_secondaries, max_gap_ns=3)
-
-
-def load_json_data(dir_path:str, extension:str, function: Callable[[Dict], Any]) -> Dict[int, Any]:
-    result = dict()
-    for name in os.listdir(dir_path):
-        full_name = os.path.join(dir_path, name)
-        _, ext = os.path.splitext(name)
-        if os.path.isfile(full_name) and ext == extension:
-            with open(full_name) as file:
-                for line in file.readlines():
-                    if len(line.strip()) == 0:
-                        continue
-                    data = json.loads(line)
-                    ts = int(data['ts'])
-                    reading = function(data)
-                    result[ts] = reading
-
-    return result
-
-
-def load_backbone_outputs(dir_path):
-    outputs = dict()
-
-    for name in os.listdir(dir_path):
-        full_name = os.path.join(dir_path, name)
-        no_ext, ext = os.path.splitext(name)
-        no_ext2, extra_ext = os.path.splitext(no_ext)
-        if os.path.isfile(full_name) and ext == '.npy':
-            ts = int(no_ext2 or no_ext)
-            outputs[ts] = np.load(full_name, mmap_mode='r')
-    
-    return outputs
-
 
 def _flatten(arr):
     return np.reshape(arr, -1)
