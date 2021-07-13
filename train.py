@@ -205,7 +205,13 @@ def read_bag(bag_file: str, reward_func_name: str) -> BagEntries:
                 if not onnx_sess:
                     onnx_sess = rt.InferenceSession(opt.onnx)
 
-                pred = get_prediction(onnx_sess, img_name)
+                try:
+                    pred = get_prediction(onnx_sess, img_name)
+                except png.FormatError:
+                    # Clear the png file so you can retry if something went wrong
+                    os.remove(img_name)
+                    raise
+
                 intermediate = get_intermediate_layer(pred)
                 np.save(intermediate_name, intermediate, allow_pickle=False)
 
