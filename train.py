@@ -208,6 +208,8 @@ if __name__ == '__main__':
     parser.add_argument('--max-samples', type=int, default=20000, help='max number of training samples to load at once')
     parser.add_argument('--cpu', default=False, action="store_true", help='run training on CPU only')
     parser.add_argument('--reward-delay-ms', type=int, default=0, help='delay reward from action by the specified amount of milliseconds')
+    # default rate for dropout assumes small inputs (order of 1024 elements)
+    parser.add_argument('--dropout', type=float, default=0.88, help='input dropout rate for training')
     opt = parser.parse_args()
 
     if torch.cuda.is_available() and not opt.cpu:
@@ -260,7 +262,7 @@ if __name__ == '__main__':
     print("matching events: " + str(len(interpolated)))
 
     # every 1000 entries in replay are ~500MB
-    sac = SoftActorCritic(RobotEnvironment, replay_size=opt.max_samples, device=device)
+    sac = SoftActorCritic(RobotEnvironment, replay_size=opt.max_samples, device=device, dropout=opt.dropout)
 
     # Save basic params to wandb configuration
     wandb.config.read_dir = opt.bag_dir
