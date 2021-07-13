@@ -5,8 +5,8 @@ import torch
 from bot_env import RobotEnvironment
 
 
-def export(sac, device, file_name):
-    sample_input = RobotEnvironment.observation_space.sample()
+def export(sac, device, file_name, env):
+    sample_input = env.observation_space.sample()
     sample_input = np.expand_dims(sample_input, 0)
     sample_input = torch.from_numpy(sample_input).to(device=device)
 
@@ -29,4 +29,4 @@ if __name__ == '__main__':
     from actor_critic.core import MLPActorCritic
     
     actor = MLPActorCritic(RobotEnvironment.observation_space, RobotEnvironment.action_space, )
-    export(actor, torch.device("cpu"), 'sac.onnx')
+    export(actor, torch.device("cpu"), 'sac.onnx', RobotEnvironment)
