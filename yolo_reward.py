@@ -128,8 +128,6 @@ def get_prediction(sess: rt.InferenceSession, png_path: str) -> List[np.ndarray]
     image_np = image_np / 255.0
     image_np = image_np.astype(np.float32)
 
-    print(image_np.shape)
-
     pred = sess.run(output_binding_names, {
         input_binding_name: image_np
     })

@@ -1,5 +1,7 @@
 import argparse
 import os.path
+import time
+
 import wandb
 import json
 import png
@@ -9,6 +11,7 @@ import dataclasses
 
 from typing import Dict, Any, Callable, List
 from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import torch
@@ -165,6 +168,7 @@ class BagEntries:
 
 
 def read_bag(bag_file: str, reward_func_name: str) -> BagEntries:
+    print(f"Opening {bag_file}")
     bag = rosbag.Bag(bag_file, 'r')
     entries = BagEntries()
     reward_func = getattr(yolo_reward, reward_func_name)
@@ -261,15 +265,19 @@ if __name__ == '__main__':
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
 
+    start_load = time.perf_counter()
     all_entries = BagEntries()
 
-    for bag_file in glob.glob(os.path.join(opt.bag_dir, "*.bag")):
-        print(f"Opening {bag_file}")
-        entries = read_bag(bag_file, opt.reward)
+    with ThreadPoolExecutor() as executor:
+        entry_futures = executor.map(lambda bag_path: read_bag(bag_path, opt.reward),
+                                     glob.glob(os.path.join(opt.bag_dir, "*.bag")))
 
-        # Merge all of the fields into one datastructure
-        for field in dataclasses.fields(entries):
-            getattr(all_entries, field.name).update(getattr(entries, field.name))
+        for entries in entry_futures:
+            print(f"Adding {len(entries.reward)} states to entries")
+
+            # Merge all of the fields into one datastructure
+            for field in dataclasses.fields(entries):
+                getattr(all_entries, field.name).update(getattr(entries, field.name))
 
     print(f"Loaded {len(all_entries.yolo_intermediate)} backbone outputs")
     print(f"Loaded {len(all_entries.reward)} rewards")
@@ -280,6 +288,7 @@ if __name__ == '__main__':
     print(f"Loaded {len(all_entries.head_accel)} head accels")
     print(f"Loaded {len(all_entries.odrive_feedback)} odrive feedbacks")
     print(f"Loaded {len(all_entries.vbus)} vbus")
+    print(f"Took {time.perf_counter() - start_load}")
 
     interpolated = interpolate_events(all_entries.yolo_intermediate, [all_entries.reward,
                                                                       all_entries.cmd_vel,
