@@ -1,6 +1,7 @@
 from gym.spaces import Box
 import numpy as np
 from math import inf, ceil
+from typing import Optional
 
 PAN_LOW = 350
 PAN_HIGH = 700
@@ -33,8 +34,9 @@ class SlicedRobotEnvironment:
     action_space = Box(low=np.array([-0.5, -0.5, PAN_LOW, TILT_LOW]),
                        high=np.array([0.5, 0.5, PAN_HIGH, TILT_HIGH]), dtype=np.float32)
 
-    def __init__(self, slice: int=151):
-        self.observation_space = Box(low=-inf, high=inf, shape=(ceil(512 * 15 * 20 / slice),), dtype=np.float32)
+    def __init__(self, slice: Optional[int]=None):
+        input_size = 512 * 15 * 20 if slice is None else ceil(512 * 15 * 20 / slice)
+        self.observation_space = Box(low=-inf, high=inf, shape=(input_size,), dtype=np.float32)
 
 
 class NormalizedRobotEnvironment(SlicedRobotEnvironment):

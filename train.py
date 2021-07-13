@@ -210,6 +210,7 @@ if __name__ == '__main__':
     parser.add_argument('--reward-delay-ms', type=int, default=0, help='delay reward from action by the specified amount of milliseconds')
     # default rate for dropout assumes small inputs (order of 1024 elements)
     parser.add_argument('--dropout', type=float, default=0.88, help='input dropout rate for training')
+    parser.add_argument('--backbone-slice', type=int, default=None, help='use every nth datapoint of the backbone')
     opt = parser.parse_args()
 
     if torch.cuda.is_available() and not opt.cpu:
@@ -262,7 +263,7 @@ if __name__ == '__main__':
     print("matching events: " + str(len(interpolated)))
 
     # every 1000 entries in replay are ~500MB
-    backbone_slice = 151
+    backbone_slice = opt.backbone_slice
     env_fn = lambda: NormalizedRobotEnvironment(slice=backbone_slice)
     sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=opt.dropout)
 
@@ -278,6 +279,7 @@ if __name__ == '__main__':
     wandb.config.dropout = sac.dropout
     wandb.config.device = str(device)
     wandb.config.reward_delay_ms = opt.reward_delay_ms
+    wandb.config.backbone_slice = backbone_slice
 
     wandb.watch(sac.ac, log="gradients", log_freq=100)  # Log gradients periodically
 
