@@ -2,6 +2,7 @@ from copy import deepcopy
 import itertools
 import numpy as np
 import torch
+from torch.nn import Dropout
 from torch.optim import Adam
 import gym
 import time
@@ -47,6 +48,7 @@ class SoftActorCritic:
             polyak=0.995, lr=1e-3, alpha=0.2,
             max_ep_len=1000,
             device=None,
+            dropout=0.88,
             logger_kwargs=dict()):
         """
         Soft Actor-Critic (SAC)
@@ -165,6 +167,8 @@ class SoftActorCritic:
         self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=lr)
         self.q_optimizer = Adam(self.q_params, lr=lr)
 
+        self.dropout = Dropout(p=dropout)
+
     # Set up function for computing SAC Q-losses
     def compute_loss_q(self, data):
         o, a, r, o2, d = data['obs'], data['act'], data['rew'], data['obs2'], data['done']
@@ -215,6 +219,9 @@ class SoftActorCritic:
         # Take both observations to the GPU for faster training
         for key in data.keys():
             data[key] = data[key].to(device=self.device)
+
+        data['obs'] = self.dropout(data['obs'])
+        data['obs2'] = self.dropout(data['obs2'])
 
         # First run one gradient descent step for Q1 and Q2
         self.q_optimizer.zero_grad()
