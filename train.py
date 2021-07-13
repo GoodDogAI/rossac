@@ -2,13 +2,15 @@ import argparse
 import os.path
 import wandb
 import json
+from math import inf
 from typing import Dict, Any, Callable
 
+from gym.spaces import Box
 import numpy as np
 import torch
 import tensorflow.compat.v1 as tf
 
-from bot_env import RobotEnvironment
+from bot_env import NormalizedRobotEnvironment, RobotEnvironment
 from actor_critic.core import MLPActorCritic
 from sac import SoftActorCritic
 from dump_onnx import export
@@ -115,7 +117,8 @@ def load_backbone_outputs(dir_path):
         no_ext2, extra_ext = os.path.splitext(no_ext)
         if os.path.isfile(full_name) and ext == '.npy':
             ts = int(no_ext2 or no_ext)
-            outputs[ts] = np.load(full_name, mmap_mode='r')
+            orig = np.load(full_name, mmap_mode='r')
+            outputs[ts] = np.reshape(orig, (1, orig.size))[:, ::151]
     
     return outputs
 
@@ -153,8 +156,15 @@ if __name__ == '__main__':
     interpolated = interpolate_events(backbone_outputs, [cmdvels, dynamixel, rewards], max_gap_ns=1000*1000*1000)
     print("matching events: " + str(len(interpolated)))
 
+    obs_dim = next(iter(backbone_outputs.values())).size
+    NormalizedRobotEnvironment.observation_space = Box(low=-inf, high=inf, shape=(obs_dim,), dtype=np.float32)
+
     # every 1000 entries in replay are ~500MB
-    sac = SoftActorCritic(RobotEnvironment, replay_size=opt.max_samples, device=device)
+    sac = SoftActorCritic(NormalizedRobotEnvironment,
+                          replay_size=opt.max_samples,
+                          device=device,
+                          lr=0.0001,
+                          ac_kwargs={"hidden_sizes":(256,256,256,256)})
 
     # Save basic params to wandb configuration
     wandb.config.read_dir = opt.read_dir
@@ -168,8 +178,11 @@ if __name__ == '__main__':
         ts, backbone, (cmdvel, pantilt, reward) = interpolated[i]
         _, future_backbone, (future_cmdvel, future_pantilt, future_reward) = future_observations = interpolated[i+1]
 
+        pan = NormalizedRobotEnvironment.normalize_pan(pantilt[0,np.newaxis])
+        tilt = NormalizedRobotEnvironment.normalize_tilt(pantilt[1,np.newaxis])
+
         sac.replay_buffer.store(obs=_flatten(backbone),
-            act=np.concatenate([cmdvel, pantilt]),
+            act=np.concatenate([cmdvel, pan, tilt]),
             rew=reward,
             next_obs=_flatten(future_backbone),
             done=False)
@@ -205,4 +218,5 @@ if __name__ == '__main__':
                 print(f"  LossQ: {lossQ}", file=samples_file)
                 print(f"  LossPi: {lossPi}", file=samples_file)
                 print(action_samples, file=samples_file)
+            export(sac.ac, device, model_name, NormalizedRobotEnvironment)
             print("saved " + model_name)
