@@ -148,6 +148,11 @@ if __name__ == '__main__':
     print("dynamixel: " + str(len(dynamixel)))
 
     rewards = load_json_data(opt.read_dir, '.rewards', lambda json: np.asarray([json['reward']]))
+    reward_delay = 100000000 # ~2 entries
+    delayed_rewards = dict()
+    for ts, v in rewards.items():
+        delayed_rewards[ts + reward_delay] = v
+    rewards = delayed_rewards
     print("rewards: " + str(len(rewards)))
 
     backbone_outputs = load_backbone_outputs(opt.read_dir)
