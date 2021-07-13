@@ -18,7 +18,7 @@ import onnxruntime as rt
 
 import tensorflow.compat.v1 as tf
 
-from bot_env import RobotEnvironment
+from bot_env import RobotEnvironment, NormalizedRobotEnvironment
 from actor_critic.core import MLPActorCritic
 from sac import SoftActorCritic
 import yolo_reward
@@ -262,7 +262,9 @@ if __name__ == '__main__':
     print("matching events: " + str(len(interpolated)))
 
     # every 1000 entries in replay are ~500MB
-    sac = SoftActorCritic(RobotEnvironment, replay_size=opt.max_samples, device=device, dropout=opt.dropout)
+    backbone_slice = 151
+    env_fn = lambda: NormalizedRobotEnvironment(slice=backbone_slice)
+    sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=opt.dropout)
 
     # Save basic params to wandb configuration
     wandb.config.read_dir = opt.bag_dir
@@ -283,10 +285,10 @@ if __name__ == '__main__':
         ts, backbone, (reward, cmd_vel, pantilt_command, pantilt_current, head_gyro, head_accel, odrive_feedback, vbus) = interpolated[i]
         _, future_backbone, _ = future_observations = interpolated[i+1]
 
-        sac.replay_buffer.store(obs=_flatten(backbone),
+        sac.replay_buffer.store(obs=_flatten(backbone)[::backbone_slice],
             act=np.concatenate([cmd_vel, pantilt_command]),
             rew=reward,
-            next_obs=_flatten(future_backbone),
+            next_obs=_flatten(future_backbone)[::backbone_slice],
             done=False)
 
     print("filled in replay buffer")

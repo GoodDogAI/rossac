@@ -1,11 +1,18 @@
 from gym.spaces import Box
 import numpy as np
-from math import inf
+from math import inf, ceil
 
 PAN_LOW = 350
 PAN_HIGH = 700
 TILT_LOW = 475
 TILT_HIGH = 725
+
+
+def _normalize(val, low, high):
+    return (val - low) * 2 / (high - low) - 1
+def _from_normalized(val_normalized, low, high):
+    return (val_normalized + 1) * (high - low) / 2 + low
+
 
 class RobotEnvironment:
     # Observation space is the yolo intermediate layer output
@@ -16,12 +23,21 @@ class RobotEnvironment:
     action_space = Box(low=np.array([-0.5, -0.5, PAN_LOW, TILT_LOW]),
                        high=np.array([0.5, 0.5, PAN_HIGH, TILT_HIGH]), dtype=np.float32)
 
-def _normalize(val, low, high):
-    return (val - low) * 2 / (high - low) - 1
-def _from_normalized(val_normalized, low, high):
-    return (val_normalized + 1) * (high - low) / 2 + low
 
-class NormalizedRobotEnvironment(RobotEnvironment):
+class SlicedRobotEnvironment:
+    # Observation space is the yolo intermediate layer output, but sliced down every 151 elements
+    observation_space = None
+
+    # Action space is the forward speed, angular rate, camera pan, and camera tilt
+    # Constants taken from randomwalk.cpp in the mainbot brain code
+    action_space = Box(low=np.array([-0.5, -0.5, PAN_LOW, TILT_LOW]),
+                       high=np.array([0.5, 0.5, PAN_HIGH, TILT_HIGH]), dtype=np.float32)
+
+    def __init__(self, slice: int=151):
+        self.observation_space = Box(low=-inf, high=inf, shape=(ceil(512 * 15 * 20 / slice),), dtype=np.float32)
+
+
+class NormalizedRobotEnvironment(SlicedRobotEnvironment):
     action_space = Box(low=np.array([-0.5, -0.5, -1, -1]),
                        high=np.array([+0.5, +0.5, +1, +1]), dtype=np.float32)
 
