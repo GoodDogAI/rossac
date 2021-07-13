@@ -322,4 +322,5 @@ if __name__ == '__main__':
                 print(f"  LossQ: {lossQ}", file=samples_file)
                 print(f"  LossPi: {lossPi}", file=samples_file)
                 print(action_samples, file=samples_file)
+            export(sac.ac, device, model_name, sac.env)
             print("saved " + model_name)
