@@ -10,6 +10,7 @@ import dataclasses
 
 from typing import Dict, Any, Callable, List
 from dataclasses import dataclass, field
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -118,22 +119,32 @@ class BagEntries:
 
 def read_bag(bag_file: str, reward_func_name: str) -> BagEntries:
     print(f"Opening {bag_file}")
+
     bag = rosbag.Bag(bag_file, 'r')
     entries = BagEntries()
     reward_func = getattr(yolo_reward, reward_func_name)
     onnx_sess = None
 
-    # TODO, Don't write any entries until you get at least one message from each channel
+    # If you are the first bag in a series, don't output any entries until you received one message from each channel
+    # This is because it can take some time for everything to fully initialize (ex. if building tensorrt models),
+    # and we don't want bogus data points.
+    wait_for_each_msg = bag_file.endswith("_0.bag")
+    received_topic = defaultdict(bool)
+    ros_topics = [opt.camera_topic,
+                  '/dynamixel_workbench/dynamixel_state',
+                  '/camera/accel/sample',
+                  '/camera/gyro/sample',
+                  '/head_feedback',
+                  '/cmd_vel',
+                  '/odrive_feedback',
+                  '/vbus']
 
-    for topic, msg, ts in bag.read_messages([opt.camera_topic,
-                                             '/dynamixel_workbench/dynamixel_state',
-                                             '/camera/accel/sample',
-                                             '/camera/gyro/sample',
-                                             '/head_feedback',
-                                             '/cmd_vel',
-                                             '/odrive_feedback',
-                                             '/vbus']):
+    for topic, msg, ts in bag.read_messages(ros_topics):
         full_ts = ts.nsecs + ts.secs * 1000000000
+
+        received_topic[topic] = True
+        if wait_for_each_msg and not all(received_topic[topic] for topic in ros_topics):
+            continue
 
         if topic == opt.camera_topic:
             # Save off the image, the YOLO Intermediate data, and calculate the reward
