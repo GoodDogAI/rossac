@@ -1,6 +1,9 @@
+__pycache__/
 checkpoints/
+good_checkpoints/
 venv/*
 wandb/*
+tests/.hypothesis
 
 #Ignore thumbnails created by Windows
 Thumbs.db
