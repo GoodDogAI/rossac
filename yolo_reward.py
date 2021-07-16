@@ -112,18 +112,18 @@ def sum_centered_objects_present(pred: List[np.ndarray]) -> float:
            centered_objects_present(pred[2], yolo3)
 
 
-def get_prediction(sess: rt.InferenceSession, png_path: str) -> List[np.ndarray]:
-    pngdata = png.Reader(filename=png_path).asRGB8()
-    image_np = np.vstack(pngdata[2])
+def get_prediction(sess: rt.InferenceSession, image_np: np.ndarray) -> List[np.ndarray]:
+    # First shape it into the 1xWxHx1 format
+    image_np = image_np.reshape((1, image_np.shape[1], image_np.shape[0], 1))
 
-    # First shape it into the WxHx3 format
-    image_np = image_np.reshape((1, pngdata[1], pngdata[0], 3))
+    # Now broadcast to 1xWxHx3
+    image_np = image_np * np.ones(dtype=image_np.dtype, shape=(image_np.shape[0], image_np.shape[1], image_np.shape[2], 3))
 
-    assert pngdata[0] == input_w
-    assert pngdata[1] == input_h
+    assert image_np.shape[1] == input_w
+    assert image_np.shape[2] == input_h
 
     # Now convert to NCHW
-    image_np = image_np.transpose((0, 3, 1, 2))
+    image_np = image_np.transpose((0, 3, 2, 1))
     # Scale to 0 to -1
     image_np = image_np / 255.0
     image_np = image_np.astype(np.float32)
