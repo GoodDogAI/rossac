@@ -178,7 +178,12 @@ def read_bag(bag_file: str, reward_func_name: str) -> BagEntries:
                 reward = reward_func(pred)
                 np.save(reward_name, reward, allow_pickle=False)
 
-            entries.yolo_intermediate[full_ts] = np.load(intermediate_name, allow_pickle=False, mmap_mode='r')
+            if opt.backbone_slice:
+                entries.yolo_intermediate[full_ts] = _flatten(np.load(intermediate_name, allow_pickle=False))[::opt.backbone_slice]
+            else:
+                # If you need the whole intermediate array, you can mmap it, but there is a 65k file limit
+                entries.yolo_intermediate[full_ts] = _flatten(np.load(intermediate_name, allow_pickle=False, mmap_mode='r'))
+
             entries.reward[full_ts] = np.load(reward_name, allow_pickle=False)
         elif topic == '/dynamixel_workbench/dynamixel_state':
             entries.dynamixel_cur_state[full_ts] = np.array([msg.dynamixel_state[0].present_position,
@@ -298,10 +303,10 @@ if __name__ == '__main__':
         ts, backbone, (reward, cmd_vel, pantilt_command, pantilt_current, head_gyro, head_accel, odrive_feedback, vbus) = interpolated[i]
         _, future_backbone, _ = future_observations = interpolated[i+1]
 
-        sac.replay_buffer.store(obs=_flatten(backbone)[::backbone_slice],
+        sac.replay_buffer.store(obs=backbone,
             act=np.concatenate([cmd_vel, pantilt_command]),
             rew=reward,
-            next_obs=_flatten(future_backbone)[::backbone_slice],
+            next_obs=future_backbone,
             done=False)
 
     print("filled in replay buffer")
