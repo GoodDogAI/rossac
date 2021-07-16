@@ -299,12 +299,20 @@ if __name__ == '__main__':
 
     wandb.watch(sac.ac, log="gradients", log_freq=100)  # Log gradients periodically
 
+    env = env_fn()
+
+    def normalize_pantilt(pantilt):
+        return env.normalize_pan(pantilt[0, np.newaxis]), env.normalize_tilt(pantilt[1, np.newaxis])
+
     for i in range(wandb.config.num_samples):
         ts, backbone, (reward, cmd_vel, pantilt_command, pantilt_current, head_gyro, head_accel, odrive_feedback, vbus) = interpolated[i]
         _, future_backbone, _ = future_observations = interpolated[i+1]
 
+        pan_command, tilt_command = normalize_pantilt(pantilt_command)
+        pan_curr, tilt_curr = normalize_pantilt(pantilt_current)
+
         sac.replay_buffer.store(obs=backbone,
-            act=np.concatenate([cmd_vel, pantilt_command]),
+            act=np.concatenate([cmd_vel, pan_command, tilt_command]),
             rew=reward,
             next_obs=future_backbone,
             done=False)
