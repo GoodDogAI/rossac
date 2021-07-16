@@ -311,6 +311,10 @@ if __name__ == '__main__':
         pan_command, tilt_command = normalize_pantilt(pantilt_command)
         pan_curr, tilt_curr = normalize_pantilt(pantilt_current)
 
+        move_penalty = abs(cmd_vel).mean() * 0.02
+        pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.01)
+        reward -= move_penalty + pantilt_penalty
+
         sac.replay_buffer.store(obs=backbone,
             act=np.concatenate([cmd_vel, pan_command, tilt_command]),
             rew=reward,
