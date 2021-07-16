@@ -304,9 +304,13 @@ if __name__ == '__main__':
     def normalize_pantilt(pantilt):
         return env.normalize_pan(pantilt[0, np.newaxis]), env.normalize_tilt(pantilt[1, np.newaxis])
 
+    def make_observation(interpolated_entry):
+        ts, backbone, (reward, cmd_vel, pantilt_command, pantilt_current, head_gyro, head_accel, odrive_feedback, vbus) = interpolated_entry
+        pan_curr, tilt_curr = normalize_pantilt(pantilt_current)
+        return np.concatenate([pan_curr, tilt_curr, head_gyro, head_accel, odrive_feedback, vbus, backbone])
+
     for i in range(wandb.config.num_samples):
         ts, backbone, (reward, cmd_vel, pantilt_command, pantilt_current, head_gyro, head_accel, odrive_feedback, vbus) = interpolated[i]
-        _, future_backbone, _ = future_observations = interpolated[i+1]
 
         pan_command, tilt_command = normalize_pantilt(pantilt_command)
         pan_curr, tilt_curr = normalize_pantilt(pantilt_current)
@@ -315,10 +319,13 @@ if __name__ == '__main__':
         pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.01)
         reward -= move_penalty + pantilt_penalty
 
-        sac.replay_buffer.store(obs=backbone,
+        obs = make_observation(interpolated[i])
+        future_obs = make_observation(interpolated[i+1])
+
+        sac.replay_buffer.store(obs=obs,
             act=np.concatenate([cmd_vel, pan_command, tilt_command]),
             rew=reward,
-            next_obs=future_backbone,
+            next_obs=future_obs,
             done=False)
 
     print("filled in replay buffer")

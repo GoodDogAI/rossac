@@ -1,4 +1,4 @@
-from gym.spaces import Box
+from gym.spaces import Box, Tuple
 import numpy as np
 from math import inf, ceil
 from typing import Optional
@@ -14,10 +14,11 @@ def _normalize(val, low, high):
 def _from_normalized(val_normalized, low, high):
     return (val_normalized + 1) * (high - low) / 2 + low
 
+YOLO_OBSERVATION_SPACE = Box(low=-inf, high=inf, shape=(512 * 15 * 20,), dtype=np.float32)
 
 class RobotEnvironment:
     # Observation space is the yolo intermediate layer output
-    observation_space = Box(low=-inf, high=inf, shape=(512 * 15 * 20,), dtype=np.float32)
+    observation_space = YOLO_OBSERVATION_SPACE
 
     # Action space is the forward speed, angular rate, camera pan, and camera tilt
     # Constants taken from randomwalk.cpp in the mainbot brain code
@@ -26,7 +27,7 @@ class RobotEnvironment:
 
 
 class SlicedRobotEnvironment:
-    # Observation space is the yolo intermediate layer output, but sliced down every 151 elements
+    # Observation space is the yolo intermediate layer output, but sliced down every X elements
     observation_space = None
 
     # Action space is the forward speed, angular rate, camera pan, and camera tilt
@@ -35,8 +36,15 @@ class SlicedRobotEnvironment:
                        high=np.array([0.5, 0.5, PAN_HIGH, TILT_HIGH]), dtype=np.float32)
 
     def __init__(self, slice: Optional[int]=None):
-        input_size = 512 * 15 * 20 if slice is None else ceil(512 * 15 * 20 / slice)
-        self.observation_space = Box(low=-inf, high=inf, shape=(input_size,), dtype=np.float32)
+        yolo_output_size = 512 * 15 * 20 if slice is None else ceil(512 * 15 * 20 / slice)
+        pantilt_current_size = 2
+        head_gyro_size = 3
+        head_accel_size = 3
+        odrive_feedback_size = 2
+        vbus_size = 1
+        total_size = (pantilt_current_size + head_gyro_size + head_accel_size
+                    + odrive_feedback_size + vbus_size + yolo_output_size)
+        self.observation_space = Box(low=-inf, high=inf, shape=(total_size,), dtype=np.float32)
 
 
 class NormalizedRobotEnvironment(SlicedRobotEnvironment):
