@@ -1,4 +1,5 @@
 import argparse
+import functools
 import os.path
 import time
 
@@ -14,6 +15,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
+import pandas as pd
+import pyarrow as pa
 import torch
 import onnxruntime as rt
 
@@ -30,6 +33,12 @@ DEFAULT_MAX_GAP_SECONDS = 5
 
 tf.disable_v2_behavior()
 wandb.init(project="sac-series1", entity="armyofrobots")
+
+
+@functools.lru_cache()
+def get_onnx_sess(onnx_path: str) -> rt.InferenceSession:
+    print("Starting ONNX inference session")
+    return rt.InferenceSession(onnx_path)
 
 
 def interpolate(pre_ts, pre_data, ts, post_ts, post_data):
@@ -117,13 +126,43 @@ class BagEntries:
     vbus: Dict[int, np.ndarray] = field(default_factory=dict)
 
 
-def read_bag(bag_file: str, reward_func_name: str) -> BagEntries:
-    print(f"Opening {bag_file}")
+DATAFRAME_COLUMNS = [
+    # The first entry is the one that we will interpolate over
+    "yolo_intermediate",
+    "reward",
 
+    "dynamixel_cur_state",
+    "dynamixel_command_state",
+
+    "cmd_vel",
+    "odrive_feedback",
+    "head_gyro",
+    "head_accel",
+    "vbus"
+]
+
+
+def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str) -> pd.DataFrame:
+    print(f"Opening {bag_file}")
+    bag_cache_name = os.path.join(opt.bag_dir, "_cache", f"{os.path.basename(bag_file)}_{reward_func_name}.arrow")
+
+    try:
+        return _read_mmapped_bag(bag_cache_name)
+    except IOError:
+        write_bag_cache(bag_file, bag_cache_name, backbone_onnx_path, reward_func_name)
+        return _read_mmapped_bag(bag_cache_name)
+
+
+def _read_mmapped_bag(bag_cache_name: str) -> pd.DataFrame:
+    source = pa.memory_map(bag_cache_name, "r")
+    table = pa.ipc.RecordBatchFileReader(source).read_all()
+    return table.to_pandas()
+
+
+def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str):
     bag = rosbag.Bag(bag_file, 'r')
-    entries = BagEntries()
+    entries = defaultdict(dict)
     reward_func = getattr(yolo_reward, reward_func_name)
-    onnx_sess = None
 
     # If you are the first bag in a series, don't output any entries until you received one message from each channel
     # This is because it can take some time for everything to fully initialize (ex. if building tensorrt models),
@@ -147,71 +186,58 @@ def read_bag(bag_file: str, reward_func_name: str) -> BagEntries:
             continue
 
         if topic == opt.camera_topic:
-            # Save off the image, the YOLO Intermediate data, and calculate the reward
-            img_name = os.path.join(opt.bag_dir, "_cache", f"{full_ts}.png")
+            img = []
+            for i in range(0, len(msg.data), msg.step):
+                img.append(np.frombuffer(msg.data[i:i + msg.step], dtype=np.uint8))
 
-            if not os.path.isfile(img_name):
-                img = []
-                for i in range(0, len(msg.data), msg.step):
-                    img.append(msg.data[i:i + msg.step])
+            assert "infra" in opt.camera_topic, "Expecting mono infrared images only right now"
 
-                img_mode = 'L' if "infra" in opt.camera_topic else 'RGB'
-                png.from_array(img, mode=img_mode).save(img_name)
+            # Convert list of byte arrays to numpy array
+            image_np = np.array(img)
+            pred = get_prediction(get_onnx_sess(backbone_onnx_path), image_np)
+            intermediate = get_intermediate_layer(pred)
+            reward = reward_func(pred)
 
-            intermediate_name = os.path.join(opt.bag_dir, "_cache", f"{full_ts}.intermediate.npy")
-            reward_name = os.path.join(opt.bag_dir, "_cache", f"{full_ts}.reward_{reward_func_name}.npy")
-
-            if not os.path.isfile(intermediate_name) or not os.path.isfile(reward_name):
-                if not onnx_sess:
-                    onnx_sess = rt.InferenceSession(opt.onnx)
-
-                try:
-                    pred = get_prediction(onnx_sess, img_name)
-                except png.FormatError:
-                    # Clear the png file so you can retry if something went wrong
-                    os.remove(img_name)
-                    raise
-
-                intermediate = get_intermediate_layer(pred)
-                np.save(intermediate_name, intermediate, allow_pickle=False)
-
-                reward = reward_func(pred)
-                np.save(reward_name, reward, allow_pickle=False)
-
-            if opt.backbone_slice:
-                entries.yolo_intermediate[full_ts] = _flatten(np.load(intermediate_name, allow_pickle=False))[::opt.backbone_slice]
-            else:
-                # If you need the whole intermediate array, you can mmap it, but there is a 65k file limit
-                entries.yolo_intermediate[full_ts] = _flatten(np.load(intermediate_name, allow_pickle=False, mmap_mode='r'))
-
-            entries.reward[full_ts] = np.load(reward_name, allow_pickle=False)
+            entries["yolo_intermediate"][full_ts] = _flatten(intermediate)
+            entries["reward"][full_ts] = reward
         elif topic == '/dynamixel_workbench/dynamixel_state':
-            entries.dynamixel_cur_state[full_ts] = np.array([msg.dynamixel_state[0].present_position,
-                                                             msg.dynamixel_state[1].present_position])
+            entries["dynamixel_cur_state"][full_ts] = np.array([msg.dynamixel_state[0].present_position,
+                                                                msg.dynamixel_state[1].present_position])
         elif topic == "/head_feedback":
-            entries.dynamixel_command_state[full_ts] = np.array([msg.pan_command,
-                                                                 msg.tilt_command])
+            entries["dynamixel_command_state"][full_ts] = np.array([msg.pan_command,
+                                                                    msg.tilt_command])
         elif topic == "/cmd_vel":
-            entries.cmd_vel[full_ts] = np.array([msg.linear.x,
-                                                 msg.angular.z])
+            entries["cmd_vel"][full_ts] = np.array([msg.linear.x,
+                                                    msg.angular.z])
         elif topic == "/camera/accel/sample":
-            entries.head_accel[full_ts] = np.array([msg.linear_acceleration.x,
-                                                    msg.linear_acceleration.y,
-                                                    msg.linear_acceleration.z])
+            entries["head_accel"][full_ts] = np.array([msg.linear_acceleration.x,
+                                                       msg.linear_acceleration.y,
+                                                       msg.linear_acceleration.z])
         elif topic == "/camera/gyro/sample":
-            entries.head_gyro[full_ts] = np.array([msg.angular_velocity.x,
-                                                   msg.angular_velocity.y,
-                                                   msg.angular_velocity.z])
+            entries["head_gyro"][full_ts] = np.array([msg.angular_velocity.x,
+                                                      msg.angular_velocity.y,
+                                                      msg.angular_velocity.z])
         elif topic == "/odrive_feedback":
-            entries.odrive_feedback[full_ts] = np.array([msg.motor_vel_actual_0,
-                                                         msg.motor_vel_actual_1])
+            entries["odrive_feedback"][full_ts] = np.array([msg.motor_vel_actual_0,
+                                                            msg.motor_vel_actual_1])
         elif topic == "/vbus":
-            entries.vbus[full_ts] = np.array([msg.data])
+            entries["vbus"][full_ts] = np.array([msg.data])
         else:
             raise KeyError("Unexpected rosbag topic")
 
-    return entries
+    interpolated = interpolate_events(entries["yolo_intermediate"], [entries[key] for key in DATAFRAME_COLUMNS[1:]],
+                                      max_gap_ns=1000 * 1000 * 1000)
 
+    df = pd.DataFrame.from_records([[ts, event, *interps] for (ts, event, interps) in interpolated],
+                                    columns=["ts", *DATAFRAME_COLUMNS], index="ts")
+
+    # Convert from pandas to Arrow
+    table = pa.Table.from_pandas(df)
+
+    # Write out to file
+    with pa.OSFile(bag_cache_path, 'wb') as sink:
+        with pa.RecordBatchFileWriter(sink, table.schema) as writer:
+            writer.write_table(table)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -241,44 +267,24 @@ if __name__ == '__main__':
         os.makedirs(cache_dir)
 
     start_load = time.perf_counter()
-    all_entries = BagEntries()
+    all_entries = None
 
-    with ThreadPoolExecutor() as executor:
-        entry_futures = executor.map(lambda bag_path: read_bag(bag_path, opt.reward),
-                                     glob.glob(os.path.join(opt.bag_dir, "*.bag")))
+    for bag_path in glob.glob(os.path.join(opt.bag_dir, "*.bag")):
+        entries = read_bag(bag_path, opt.onnx, opt.reward)
 
-        for entries in entry_futures:
-            print(f"Adding {len(entries.reward)} states to entries")
+        if all_entries is None:
+            all_entries = entries
+        else:
+            all_entries = all_entries.append(entries)
 
-            # Merge all of the fields into one datastructure
-            for field in dataclasses.fields(entries):
-                getattr(all_entries, field.name).update(getattr(entries, field.name))
-
-    print(f"Loaded {len(all_entries.yolo_intermediate)} backbone outputs")
-    print(f"Loaded {len(all_entries.reward)} rewards")
-    print(f"Loaded {len(all_entries.cmd_vel)} cmd_vels")
-    print(f"Loaded {len(all_entries.dynamixel_command_state)} dynamixel commands")
-    print(f"Loaded {len(all_entries.dynamixel_cur_state)} dynamixel states")
-    print(f"Loaded {len(all_entries.head_gyro)} head gyros")
-    print(f"Loaded {len(all_entries.head_accel)} head accels")
-    print(f"Loaded {len(all_entries.odrive_feedback)} odrive feedbacks")
-    print(f"Loaded {len(all_entries.vbus)} vbus")
+    print(f"Loaded {len(all_entries)} base entries")
     print(f"Took {time.perf_counter() - start_load}")
 
+    # TODO Put back reward delay
     if opt.reward_delay_ms > 0:
-        all_entries.reward = { ts + opt.reward_delay_ms * 1000000: reward for ts, reward in all_entries.reward.items() }
+        raise NotImplementedError()
+    #     all_entries.reward = { ts + opt.reward_delay_ms * 1000000: reward for ts, reward in all_entries.reward.items() }
 
-    interpolated = interpolate_events(all_entries.yolo_intermediate, [all_entries.reward,
-                                                                      all_entries.cmd_vel,
-                                                                      all_entries.dynamixel_command_state,
-                                                                      all_entries.dynamixel_cur_state,
-                                                                      all_entries.head_gyro,
-                                                                      all_entries.head_accel,
-                                                                      all_entries.odrive_feedback,
-                                                                      all_entries.vbus], max_gap_ns=1000*1000*1000)
-    print("matching events: " + str(len(interpolated)))
-
-    # every 1000 entries in replay are ~500MB
     backbone_slice = opt.backbone_slice
     env_fn = lambda: NormalizedRobotEnvironment(slice=backbone_slice)
     sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=opt.dropout)
@@ -286,7 +292,7 @@ if __name__ == '__main__':
     # Save basic params to wandb configuration
     wandb.config.read_dir = opt.bag_dir
     wandb.config.reward_func_name = opt.reward
-    wandb.config.num_samples = min(len(interpolated)-1, opt.max_samples)
+    wandb.config.num_samples = min(len(all_entries)-1, opt.max_samples)
     wandb.config.batch_size = opt.batch_size
     wandb.config.gamma = sac.gamma
     wandb.config.polyak = sac.polyak
@@ -310,7 +316,8 @@ if __name__ == '__main__':
         return np.concatenate([pan_curr, tilt_curr, head_gyro, head_accel, odrive_feedback, vbus, backbone])
 
     for i in range(wandb.config.num_samples):
-        ts, backbone, (reward, cmd_vel, pantilt_command, pantilt_current, head_gyro, head_accel, odrive_feedback, vbus) = interpolated[i]
+        entry = all_entries.iloc[i]
+        next_entry = all_entries.iloc[i+1]
 
         pan_command, tilt_command = normalize_pantilt(pantilt_command)
         pan_curr, tilt_curr = normalize_pantilt(pantilt_current)
@@ -319,12 +326,12 @@ if __name__ == '__main__':
         pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.01)
         reward -= move_penalty + pantilt_penalty
 
-        obs = make_observation(interpolated[i])
-        future_obs = make_observation(interpolated[i+1])
+        obs = make_observation(entry)
+        future_obs = make_observation(next_entry)
 
         sac.replay_buffer.store(obs=obs,
             act=np.concatenate([cmd_vel, pan_command, tilt_command]),
-            rew=reward,
+            rew=entry.reward,
             next_obs=future_obs,
             done=False)
 

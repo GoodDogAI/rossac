@@ -10,6 +10,10 @@ rosbag
 # For reading pngs out of rosbags
 pypng
 
+# For loading and persisting data efficiently
+pandas
+pyarrow
+
 # For running the same ONNX models as run on the bot locally, for loss function estimation
 onnxruntime
 
