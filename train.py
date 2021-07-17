@@ -146,7 +146,7 @@ DATAFRAME_COLUMNS = [
 
 def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str) -> pd.DataFrame:
     print(f"Opening {bag_file}")
-    bag_cache_name = os.path.join(opt.bag_dir, "_cache", f"{os.path.basename(bag_file)}_{reward_func_name}.parquet")
+    bag_cache_name = os.path.join(opt.bag_dir, "_cache", f"{os.path.basename(bag_file)}_{reward_func_name}.arrow")
 
     try:
         return _read_mmapped_bag(bag_cache_name)
