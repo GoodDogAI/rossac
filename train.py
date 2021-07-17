@@ -335,7 +335,7 @@ if __name__ == '__main__':
 
         sac.replay_buffer.store(obs=obs,
             act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
-            rew=entry.reward,
+            rew=reward,
             next_obs=future_obs,
             done=False)
 
