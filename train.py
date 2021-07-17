@@ -149,7 +149,6 @@ def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str) -> p
     try:
         return _read_mmapped_bag(bag_cache_name)
     except IOError:
-        return None
         write_bag_cache(bag_file, bag_cache_name, backbone_onnx_path, reward_func_name)
         return _read_mmapped_bag(bag_cache_name)
 
@@ -272,9 +271,6 @@ if __name__ == '__main__':
 
     for bag_path in glob.glob(os.path.join(opt.bag_dir, "*.bag")):
         entries = read_bag(bag_path, opt.onnx, opt.reward)
-
-        if entries is None:
-            continue
 
         if all_entries is None:
             all_entries = entries
