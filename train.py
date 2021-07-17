@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 import torch
 import onnxruntime as rt
 
@@ -147,9 +148,20 @@ def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str) -> p
     print(f"Opening {bag_file}")
     bag_cache_name = os.path.join(opt.bag_dir, "_cache", f"{os.path.basename(bag_file)}_{reward_func_name}.parquet")
 
-    # try:
-    #     return pd.read_feather(bag_cache_name)
-    # except IOError:
+    try:
+        return _read_mmapped_bag(bag_cache_name)
+    except IOError:
+        write_bag_cache(bag_file, bag_cache_name, backbone_onnx_path, reward_func_name)
+        return _read_mmapped_bag(bag_cache_name)
+
+
+def _read_mmapped_bag(bag_cache_name: str) -> pd.DataFrame:
+    source = pa.memory_map(bag_cache_name, "r")
+    table = pa.ipc.RecordBatchFileReader(source).read_all()
+    return table.to_pandas()
+
+
+def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str):
     bag = rosbag.Bag(bag_file, 'r')
     entries = defaultdict(dict)
     reward_func = getattr(yolo_reward, reward_func_name)
@@ -188,7 +200,7 @@ def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str) -> p
             intermediate = get_intermediate_layer(pred)
             reward = reward_func(pred)
 
-            entries["yolo_intermediate"][full_ts] = intermediate
+            entries["yolo_intermediate"][full_ts] = _flatten(intermediate)
             entries["reward"][full_ts] = reward
         elif topic == '/dynamixel_workbench/dynamixel_state':
             entries["dynamixel_cur_state"][full_ts] = np.array([msg.dynamixel_state[0].present_position,
@@ -215,18 +227,19 @@ def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str) -> p
         else:
             raise KeyError("Unexpected rosbag topic")
 
-        if len(entries["yolo_intermediate"]) > 5:
-            break
-
     interpolated = interpolate_events(entries["yolo_intermediate"], [entries[key] for key in DATAFRAME_COLUMNS[1:]],
                                       max_gap_ns=1000 * 1000 * 1000)
 
     df = pd.DataFrame.from_records([[ts, event, *interps] for (ts, event, interps) in interpolated],
-                                 columns=["ts", *DATAFRAME_COLUMNS], index="ts")
+                                    columns=["ts", *DATAFRAME_COLUMNS], index="ts")
 
-    df.to_parquet(bag_cache_name)
-    return df
+    # Convert from pandas to Arrow
+    table = pa.Table.from_pandas(df)
 
+    # Write out to file
+    with pa.OSFile(bag_cache_path, 'wb') as sink:
+        with pa.RecordBatchFileWriter(sink, table.schema) as writer:
+            writer.write_table(table)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -256,45 +269,24 @@ if __name__ == '__main__':
         os.makedirs(cache_dir)
 
     start_load = time.perf_counter()
-    all_entries = pd.DataFrame()
+    all_entries = None
 
     for bag_path in glob.glob(os.path.join(opt.bag_dir, "*.bag")):
         entries = read_bag(bag_path, opt.onnx, opt.reward)
-        all_entries.append(entries)
 
-    # with ThreadPoolExecutor(max_workers=1) as executor:
-    #     entry_futures = executor.map(lambda bag_path: read_bag(bag_path, opt.onnx, opt.reward),
-    #                                  glob.glob(os.path.join(opt.bag_dir, "*.bag")))
-    #
-    #     for entries in entry_futures:
-    #         print(f"Adding {len(entries.reward)} states to entries")
-    #         all_entries.append(entries)
+        if all_entries is None:
+            all_entries = entries
+        else:
+            all_entries = all_entries.append(entries)
 
-    print(f"Loaded {len(all_entries.yolo_intermediate)} backbone outputs")
-    print(f"Loaded {len(all_entries.reward)} rewards")
-    print(f"Loaded {len(all_entries.cmd_vel)} cmd_vels")
-    print(f"Loaded {len(all_entries.dynamixel_command_state)} dynamixel commands")
-    print(f"Loaded {len(all_entries.dynamixel_cur_state)} dynamixel states")
-    print(f"Loaded {len(all_entries.head_gyro)} head gyros")
-    print(f"Loaded {len(all_entries.head_accel)} head accels")
-    print(f"Loaded {len(all_entries.odrive_feedback)} odrive feedbacks")
-    print(f"Loaded {len(all_entries.vbus)} vbus")
+    print(f"Loaded {len(all_entries)} base entries")
     print(f"Took {time.perf_counter() - start_load}")
 
+    # TODO Put back reward delay
     if opt.reward_delay_ms > 0:
-        all_entries.reward = { ts + opt.reward_delay_ms * 1000000: reward for ts, reward in all_entries.reward.items() }
+        raise NotImplementedError()
+    #     all_entries.reward = { ts + opt.reward_delay_ms * 1000000: reward for ts, reward in all_entries.reward.items() }
 
-    interpolated = interpolate_events(all_entries.yolo_intermediate, [all_entries.reward,
-                                                                      all_entries.cmd_vel,
-                                                                      all_entries.dynamixel_command_state,
-                                                                      all_entries.dynamixel_cur_state,
-                                                                      all_entries.head_gyro,
-                                                                      all_entries.head_accel,
-                                                                      all_entries.odrive_feedback,
-                                                                      all_entries.vbus], max_gap_ns=1000*1000*1000)
-    print("matching events: " + str(len(interpolated)))
-
-    # every 1000 entries in replay are ~500MB
     backbone_slice = opt.backbone_slice
     env_fn = lambda: NormalizedRobotEnvironment(slice=backbone_slice)
     sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=opt.dropout)
@@ -302,7 +294,7 @@ if __name__ == '__main__':
     # Save basic params to wandb configuration
     wandb.config.read_dir = opt.bag_dir
     wandb.config.reward_func_name = opt.reward
-    wandb.config.num_samples = min(len(interpolated)-1, opt.max_samples)
+    wandb.config.num_samples = min(len(all_entries)-1, opt.max_samples)
     wandb.config.batch_size = opt.batch_size
     wandb.config.gamma = sac.gamma
     wandb.config.polyak = sac.polyak
@@ -316,13 +308,13 @@ if __name__ == '__main__':
     wandb.watch(sac.ac, log="gradients", log_freq=100)  # Log gradients periodically
 
     for i in range(wandb.config.num_samples):
-        ts, backbone, (reward, cmd_vel, pantilt_command, pantilt_current, head_gyro, head_accel, odrive_feedback, vbus) = interpolated[i]
-        _, future_backbone, _ = future_observations = interpolated[i+1]
+        entry = all_entries.iloc[i]
+        next_entry = all_entries.iloc[i+1]
 
-        sac.replay_buffer.store(obs=_flatten(backbone)[::backbone_slice],
-            act=np.concatenate([cmd_vel, pantilt_command]),
-            rew=reward,
-            next_obs=_flatten(future_backbone)[::backbone_slice],
+        sac.replay_buffer.store(obs=entry.yolo_intermediate[::backbone_slice],
+            act=np.concatenate([entry.cmd_vel, entry.dynamixel_command_state]),
+            rew=entry.reward,
+            next_obs=next_entry.yolo_intermediate[::backbone_slice],
             done=False)
 
     print("filled in replay buffer")
