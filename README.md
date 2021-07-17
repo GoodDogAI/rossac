@@ -6,6 +6,7 @@ Features:
  - Train a SAC model given rosbags as preprocessed above
 
 ### Status:
+- July 17th, 2021 Fixed training process to allow lots and lots of bags without OOM errors. Passing in a richer observation space. Latest checkpoints can showcase some movement of the wheels that's correlated with objects on the screen.
 - July 9th, 2021 Gathered new bag files with additional data (wheel speeds, head pan/tilt commands not just current positions)
 - July 8th, 2021 Victor trained a model using August 2020 bag files. It spins the wheels slowly in one direction, with mild variability, the head pan is almost constant, and the head tilt goes up and down a lot. 
   The activity on the head tilt is correlated loosely with what objects are located in the current image.
@@ -18,9 +19,9 @@ TODOs:
  - [X] Is the ONNXNormal distribution that we wrote perfectly matching the Pytorch original version? Write unit tests.
  - [ ] Write a script that can take an SAC onnx file, and then run it end-to-end and output the actions. Are those action outputs reasonable on the reply buffer, do they match on both the offline and online bot code running TensorRT?
  - [ ] In the Spinningup ai examples, they calculate a Reward-to-go for an episode, discounting the reward for each step in that episode. But our current code just uses the instantaneous reward at each step.
- - [ ] Make observation vector richer (actual wheel speed, head acceleration, etc)
+ - [X] Make observation vector richer (actual wheel speed, head acceleration, etc)
  - [ ] Make action space a "rate of change" instead of absolute
  - [X] Add WANDB support for tracking training runs.
- - [ ] Currently the action-space uses the sensed pan-tilt position, and not the actual commanded pan-tilt position.
+ - [X] Currently the action-space uses the sensed pan-tilt position, and not the actual commanded pan-tilt position.
  - [ ] Renormalize the odrive feedback into cmdvel units, and pass it into the training as an observation.
  - [ ] Pass in time since last observation as an observation itself.
