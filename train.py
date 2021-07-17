@@ -149,6 +149,7 @@ def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str) -> p
     try:
         return _read_mmapped_bag(bag_cache_name)
     except IOError:
+        return None
         write_bag_cache(bag_file, bag_cache_name, backbone_onnx_path, reward_func_name)
         return _read_mmapped_bag(bag_cache_name)
 
@@ -272,6 +273,9 @@ if __name__ == '__main__':
     for bag_path in glob.glob(os.path.join(opt.bag_dir, "*.bag")):
         entries = read_bag(bag_path, opt.onnx, opt.reward)
 
+        if entries is None:
+            continue
+
         if all_entries is None:
             all_entries = entries
         else:
@@ -311,26 +315,30 @@ if __name__ == '__main__':
         return env.normalize_pan(pantilt[0, np.newaxis]), env.normalize_tilt(pantilt[1, np.newaxis])
 
     def make_observation(interpolated_entry):
-        ts, backbone, (reward, cmd_vel, pantilt_command, pantilt_current, head_gyro, head_accel, odrive_feedback, vbus) = interpolated_entry
-        pan_curr, tilt_curr = normalize_pantilt(pantilt_current)
-        return np.concatenate([pan_curr, tilt_curr, head_gyro, head_accel, odrive_feedback, vbus, backbone])
+        pan_curr, tilt_curr = normalize_pantilt(interpolated_entry.dynamixel_cur_state)
+        return np.concatenate([pan_curr, tilt_curr,
+                               interpolated_entry.head_gyro,
+                               interpolated_entry.head_accel,
+                               interpolated_entry.odrive_feedback,
+                               interpolated_entry.vbus,
+                               interpolated_entry.yolo_intermediate[::backbone_slice]])
 
     for i in range(wandb.config.num_samples):
         entry = all_entries.iloc[i]
         next_entry = all_entries.iloc[i+1]
 
-        pan_command, tilt_command = normalize_pantilt(pantilt_command)
-        pan_curr, tilt_curr = normalize_pantilt(pantilt_current)
+        pan_command, tilt_command = normalize_pantilt(entry.dynamixel_command_state)
+        pan_curr, tilt_curr = normalize_pantilt(entry.dynamixel_cur_state)
 
-        move_penalty = abs(cmd_vel).mean() * 0.02
+        move_penalty = abs(entry.cmd_vel).mean() * 0.02
         pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.01)
-        reward -= move_penalty + pantilt_penalty
+        reward = entry.reward - (move_penalty + pantilt_penalty)
 
         obs = make_observation(entry)
         future_obs = make_observation(next_entry)
 
         sac.replay_buffer.store(obs=obs,
-            act=np.concatenate([cmd_vel, pan_command, tilt_command]),
+            act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
             rew=entry.reward,
             next_obs=future_obs,
             done=False)
