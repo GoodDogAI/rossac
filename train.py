@@ -367,7 +367,7 @@ if __name__ == '__main__':
         if i % 20 == 0:
             action_samples = sac.sample_actions(8).detach().cpu().numpy()
             wandb.log(step=i, data={
-                      "action_samples": wandb.Table(columns=["cmd_vel_linear", "cmd_vel_angular", "pan", "tilt"], data=action_samples)
+                        "action_sample_stdevs": np.mean(np.std(action_samples, axis=0))
                       })
             print(action_samples)
             samples_name = model_name + ".samples"
