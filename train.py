@@ -353,22 +353,29 @@ if __name__ == '__main__':
         print(f"  LossQ: {lossQ}", end=None)
         print(f"  LossPi: {lossPi}", end=None)
 
-        wandb.log({
-            "LossQ": lossQ,
-            "LossPi": lossPi,
-        })
+        wandb.log(step=i,
+                  data={
+                      "LossQ": lossQ,
+                      "LossPi": lossPi,
+                  })
 
         sample_action = sac.logger.epoch_dict['Pi'][-1][0]
         print(f"  Sample Action: velocity {sample_action[0]:.2f}  angle {sample_action[1]:.2f}  pan {sample_action[2]:.1f}  tilt {sample_action[3]:.1f}")
-        model_name = f"checkpoints/sac-{i:05d}.onnx"
+
+        model_name = f"checkpoints/sac-{wandb.run.name}-{i:05d}.onnx"
 
         if i % 20 == 0:
-            action_samples = sac.sample_actions(8).cpu()
+            action_samples = sac.sample_actions(8).detach().cpu().numpy()
+            wandb.log(step=i, data={
+                      "action_samples": wandb.Table(columns=["cmd_vel_linear", "cmd_vel_angular", "pan", "tilt"], data=action_samples)
+                      })
             print(action_samples)
             samples_name = model_name + ".samples"
             with open(samples_name, 'w') as samples_file:
                 print(f"  LossQ: {lossQ}", file=samples_file)
                 print(f"  LossPi: {lossPi}", file=samples_file)
                 print(action_samples, file=samples_file)
+
+        if i % 100 == 0:
             export(sac.ac, device, model_name, sac.env)
             print("saved " + model_name)
