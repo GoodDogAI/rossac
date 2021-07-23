@@ -103,6 +103,9 @@ class MLPActorCritic(nn.Module):
                  activation=nn.SELU):
         super().__init__()
 
+        if len(hidden_sizes) == 0:
+            raise ValueError("Must have at least one hidden layer")
+
         obs_dim = observation_space.shape[0]
         act_dim = action_space.shape[0]
 
