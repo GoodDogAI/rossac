@@ -142,14 +142,15 @@ DATAFRAME_COLUMNS = [
 ]
 
 
-def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str) -> pd.DataFrame:
+def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
+            reward_delay_ms: int) -> pd.DataFrame:
     print(f"Opening {bag_file}")
-    bag_cache_name = os.path.join(opt.bag_dir, "_cache", f"{os.path.basename(bag_file)}_{reward_func_name}.arrow")
+    bag_cache_name = os.path.join(opt.cache_dir, f"{os.path.basename(bag_file)}_{reward_func_name}_+{reward_delay_ms}ms.arrow")
 
     try:
         return _read_mmapped_bag(bag_cache_name)
     except IOError:
-        write_bag_cache(bag_file, bag_cache_name, backbone_onnx_path, reward_func_name)
+        write_bag_cache(bag_file, bag_cache_name, backbone_onnx_path, reward_func_name, reward_delay_ms)
         return _read_mmapped_bag(bag_cache_name)
 
 
@@ -159,7 +160,8 @@ def _read_mmapped_bag(bag_cache_name: str) -> pd.DataFrame:
     return table.to_pandas()
 
 
-def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str):
+def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str,
+                    reward_delay_ms: int):
     bag = rosbag.Bag(bag_file, 'r')
     entries = defaultdict(dict)
     reward_func = getattr(yolo_reward, reward_func_name)
@@ -199,7 +201,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
             reward = reward_func(pred)
 
             entries["yolo_intermediate"][full_ts] = _flatten(intermediate)
-            entries["reward"][full_ts] = reward
+            entries["reward"][full_ts + reward_delay_ms * 1000000] = reward
         elif topic == '/dynamixel_workbench/dynamixel_state':
             entries["dynamixel_cur_state"][full_ts] = np.array([msg.dynamixel_state[0].present_position,
                                                                 msg.dynamixel_state[1].present_position])
@@ -249,10 +251,11 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=1024, help='number of samples per training step')
     parser.add_argument('--max-samples', type=int, default=20000, help='max number of training samples to load at once')
     parser.add_argument('--cpu', default=False, action="store_true", help='run training on CPU only')
-    parser.add_argument('--reward-delay-ms', type=int, default=0, help='delay reward from action by the specified amount of milliseconds')
+    parser.add_argument('--reward-delay-ms', type=int, default=100, help='delay reward from action by the specified amount of milliseconds')
     # default rate for dropout assumes small inputs (order of 1024 elements)
     parser.add_argument('--dropout', type=float, default=0.88, help='input dropout rate for training')
     parser.add_argument('--backbone-slice', type=int, default=None, help='use every nth datapoint of the backbone')
+    parser.add_argument('--cache-dir', type=str, default=None, help='directory to store precomputed values')
     opt = parser.parse_args()
 
     if torch.cuda.is_available() and not opt.cpu:
@@ -262,7 +265,8 @@ if __name__ == '__main__':
         device = None
         print("Using CPU")
 
-    cache_dir = os.path.join(opt.bag_dir, "_cache")
+    cache_dir = opt.cache_dir or os.path.join(opt.bag_dir, "_cache")
+    opt.cache_dir = cache_dir
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
 
@@ -270,7 +274,7 @@ if __name__ == '__main__':
     all_entries = None
 
     for bag_path in glob.glob(os.path.join(opt.bag_dir, "*.bag")):
-        entries = read_bag(bag_path, opt.onnx, opt.reward)
+        entries = read_bag(bag_path, opt.onnx, opt.reward, opt.reward_delay_ms)
 
         if all_entries is None:
             all_entries = entries
@@ -279,11 +283,6 @@ if __name__ == '__main__':
 
     print(f"Loaded {len(all_entries)} base entries")
     print(f"Took {time.perf_counter() - start_load}")
-
-    # TODO Put back reward delay
-    if opt.reward_delay_ms > 0:
-        raise NotImplementedError()
-    #     all_entries.reward = { ts + opt.reward_delay_ms * 1000000: reward for ts, reward in all_entries.reward.items() }
 
     backbone_slice = opt.backbone_slice
     env_fn = lambda: NormalizedRobotEnvironment(slice=backbone_slice)
