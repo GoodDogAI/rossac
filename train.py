@@ -282,7 +282,6 @@ if __name__ == '__main__':
             all_entries = all_entries.append(entries)
 
     print(f"Loaded {len(all_entries)} base entries")
-    print(f"Took {time.perf_counter() - start_load}")
 
     backbone_slice = opt.backbone_slice
     env_fn = lambda: NormalizedRobotEnvironment(slice=backbone_slice)
@@ -318,6 +317,7 @@ if __name__ == '__main__':
                                interpolated_entry.vbus,
                                interpolated_entry.yolo_intermediate[::backbone_slice]])
 
+    nans = 0
     for i in range(wandb.config.num_samples):
         entry = all_entries.iloc[i]
         next_entry = all_entries.iloc[i+1]
@@ -332,6 +332,10 @@ if __name__ == '__main__':
         obs = make_observation(entry)
         future_obs = make_observation(next_entry)
 
+        if np.isnan(obs).any() or np.isnan(future_obs).any():
+            nans += 1
+            continue
+
         sac.replay_buffer.store(obs=obs,
             act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
             rew=reward,
@@ -339,6 +343,8 @@ if __name__ == '__main__':
             done=False)
 
     print("filled in replay buffer")
+    print(f"Took {time.perf_counter() - start_load}")
+    print(f"NaNs in {nans} of {wandb.config.num_samples} samples")
 
     if not os.path.exists('checkpoints'):
         os.makedirs('checkpoints')
