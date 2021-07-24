@@ -43,7 +43,7 @@ class ReplayBuffer:
 
 
 class SoftActorCritic:
-    def __init__(self, env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
+    def __init__(self, env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(),
             replay_size=int(1e6), gamma=0.99,
             polyak=0.995, lr=1e-3, alpha=0.2,
             max_ep_len=1000,
@@ -95,8 +95,6 @@ class SoftActorCritic:
             ac_kwargs (dict): Any kwargs appropriate for the ActorCritic object
                 you provided to SAC.
 
-            seed (int): Seed for random number generators.
-
             replay_size (int): Maximum length of replay buffer.
 
             gamma (float): Discount factor. (Always between 0 and 1.)
@@ -132,9 +130,6 @@ class SoftActorCritic:
         self.lr = lr
 
         self.device = device
-
-        torch.manual_seed(seed)
-        np.random.seed(seed)
 
         self.env, self.test_env = env_fn(), env_fn()
         obs_dim = self.env.observation_space.shape

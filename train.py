@@ -1,6 +1,7 @@
 import argparse
 import functools
 import os.path
+import random
 import time
 
 import wandb
@@ -261,6 +262,7 @@ if __name__ == '__main__':
     parser.add_argument('--backbone-slice', type=int, default=None, help='use every nth datapoint of the backbone')
     parser.add_argument('--cache-dir', type=str, default=None, help='directory to store precomputed values')
     parser.add_argument('--epoch-steps', type=int, default=100, help='how often to save checkpoints')
+    parser.add_argument('--seed', type=int, default=None, help='training seed')
     opt = parser.parse_args()
 
     if torch.cuda.is_available() and not opt.cpu:
@@ -269,6 +271,10 @@ if __name__ == '__main__':
     else:
         device = None
         print("Using CPU")
+
+    opt.seed = opt.seed or random.randint(0, 2**31 - 1)
+    torch.manual_seed(opt.seed)
+    np.random.seed(opt.seed)
 
     cache_dir = opt.cache_dir or os.path.join(opt.bag_dir, "_cache")
     opt.cache_dir = cache_dir
@@ -357,6 +363,7 @@ if __name__ == '__main__':
     wandb.config.device = str(device)
     wandb.config.reward_delay_ms = opt.reward_delay_ms
     wandb.config.backbone_slice = backbone_slice
+    wandb.config.seed = opt.seed
 
     wandb.watch(sac.ac, log="gradients", log_freq=100)  # Log gradients periodically
 
