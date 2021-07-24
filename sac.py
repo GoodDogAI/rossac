@@ -41,6 +41,37 @@ class ReplayBuffer:
                      done=self.done_buf[idxs])
         return {k: torch.as_tensor(v, dtype=torch.float32) for k, v in batch.items()}
 
+class TorchReplayBuffer:
+    def __init__(self, obs_dim, act_dim, size, device=None):
+        self.device = device
+        self.obs_buf = torch.zeros(core.combined_shape(size, obs_dim), device=device, dtype=torch.float32)
+        self.obs2_buf = torch.zeros(core.combined_shape(size, obs_dim), device=device, dtype=torch.float32)
+        self.act_buf = torch.zeros(core.combined_shape(size, act_dim), device=device, dtype=torch.float32)
+        self.rew_buf = torch.zeros(size, device=device, dtype=torch.float32)
+        self.done_buf = torch.zeros(size, device=device, dtype=torch.float32)
+        self.ptr, self.size, self.max_size = 0, 0, size
+
+    def store(self, obs, act, rew, next_obs, done):
+        with torch.no_grad():
+            # replace random entry when full
+            if self.size == self.max_size:
+                self.ptr = torch.randint(0, self.max_size, (), dtype=torch.int64, device=self.device)
+            self.obs_buf[self.ptr] = torch.as_tensor(obs, device=self.device)
+            self.obs2_buf[self.ptr] = torch.as_tensor(next_obs, device=self.device)
+            self.act_buf[self.ptr] = torch.as_tensor(act, device=self.device)
+            self.rew_buf[self.ptr] = torch.as_tensor(rew, device=self.device)
+            self.done_buf[self.ptr] = torch.as_tensor(done, device=self.device)
+            self.ptr += 1
+            self.size = min(self.size + 1, self.max_size)
+
+    def sample_batch(self, batch_size=32):
+        idxs = torch.randint(0, self.size, (batch_size,), dtype=torch.int64, device=self.device)
+        batch = dict(obs=self.obs_buf[idxs],
+                     obs2=self.obs2_buf[idxs],
+                     act=self.act_buf[idxs],
+                     rew=self.rew_buf[idxs],
+                     done=self.done_buf[idxs])
+        return batch
 
 class SoftActorCritic:
     def __init__(self, env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(),
@@ -49,6 +80,7 @@ class SoftActorCritic:
             max_ep_len=1000,
             device=None,
             dropout=0.88,
+            replay_buffer_factory=ReplayBuffer,
             logger_kwargs=dict()):
         """
         Soft Actor-Critic (SAC)
@@ -153,7 +185,7 @@ class SoftActorCritic:
         self.q_params = itertools.chain(self.ac.q1.parameters(), self.ac.q2.parameters())
 
         # Experience buffer
-        self.replay_buffer = ReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, size=replay_size)
+        self.replay_buffer = replay_buffer_factory(obs_dim=obs_dim, act_dim=act_dim, size=replay_size)
 
         # Count variables (protip: try to get a feel for how different size networks behave!)
         var_counts = tuple(core.count_vars(module) for module in [self.ac.pi, self.ac.q1, self.ac.q2])

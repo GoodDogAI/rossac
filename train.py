@@ -25,7 +25,7 @@ import tensorflow.compat.v1 as tf
 
 from bot_env import RobotEnvironment, NormalizedRobotEnvironment
 from actor_critic.core import MLPActorCritic
-from sac import SoftActorCritic
+from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic
 import yolo_reward
 from yolo_reward import get_prediction, get_intermediate_layer
 from dump_onnx import export
@@ -263,6 +263,7 @@ if __name__ == '__main__':
     parser.add_argument('--cache-dir', type=str, default=None, help='directory to store precomputed values')
     parser.add_argument('--epoch-steps', type=int, default=100, help='how often to save checkpoints')
     parser.add_argument('--seed', type=int, default=None, help='training seed')
+    parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
     opt = parser.parse_args()
 
     if torch.cuda.is_available() and not opt.cpu:
@@ -296,7 +297,11 @@ if __name__ == '__main__':
 
     backbone_slice = opt.backbone_slice
     env_fn = lambda: NormalizedRobotEnvironment(slice=backbone_slice)
-    sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=opt.dropout)
+    replay_buffer_factory = ReplayBuffer
+    if opt.gpu_replay_buffer:
+        replay_buffer_factory = lambda obs_dim, act_dim, size: TorchReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, size=size, device=device)
+    sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=opt.dropout,
+                          replay_buffer_factory=replay_buffer_factory)
 
     env = env_fn()
 
