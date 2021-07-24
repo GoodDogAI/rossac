@@ -7,7 +7,6 @@ import wandb
 import png
 import glob
 import rosbag
-import dataclasses
 
 from typing import Dict, Any, Callable, List
 from dataclasses import dataclass, field
@@ -200,6 +199,12 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
             pred = get_prediction(get_onnx_sess(backbone_onnx_path), image_np)
             intermediate = get_intermediate_layer(pred)
             reward = reward_func(pred)
+
+            if np.isnan(intermediate).any():
+                print(f"Invalid YOLO output in bag: {bag_file} at ts {ts}")
+                img_mode = 'L' if "infra" in opt.camera_topic else 'RGB'
+                png.from_array(img, mode=img_mode).save(os.path.join(opt.cache_dir, f"error_{os.path.basename(bag_file)}_{ts}.png"))
+                continue
 
             entries["yolo_intermediate"][full_ts] = _flatten(intermediate)
             entries["reward"][full_ts + reward_delay_ms * 1000000] = reward
