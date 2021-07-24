@@ -20,5 +20,8 @@ onnxruntime
 # For reporting and saving training logs
 wandb
 
+# console progress bar
+tqdm
+
 # For unit testing (QuickCheck style)
 hypothesis

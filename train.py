@@ -13,6 +13,7 @@ from typing import Dict, Any, Callable, List
 from dataclasses import dataclass, field
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
 
 import numpy as np
 import pandas as pd
@@ -320,7 +321,7 @@ if __name__ == '__main__':
 
     nans = 0
     oobs = 0
-    for i in range(wandb.config.num_samples):
+    for i in tqdm(range(wandb.config.num_samples)):
         entry = all_entries.iloc[i]
         next_entry = all_entries.iloc[i+1]
 
