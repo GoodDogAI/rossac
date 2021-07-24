@@ -325,6 +325,8 @@ if __name__ == '__main__':
 
         move_penalty = abs(entry.cmd_vel).mean() * 0.02
         pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.01)
+        if move_penalty + pantilt_penalty > 10:
+            print("WARNING: high move penalty!")
         reward = entry.reward - (move_penalty + pantilt_penalty)
 
         obs = make_observation(entry)
