@@ -256,6 +256,7 @@ if __name__ == '__main__':
     parser.add_argument('--dropout', type=float, default=0.88, help='input dropout rate for training')
     parser.add_argument('--backbone-slice', type=int, default=None, help='use every nth datapoint of the backbone')
     parser.add_argument('--cache-dir', type=str, default=None, help='directory to store precomputed values')
+    parser.add_argument('--epoch-steps', type=int, default=100, help='how often to save checkpoints')
     opt = parser.parse_args()
 
     if torch.cuda.is_available() and not opt.cpu:
@@ -358,6 +359,9 @@ if __name__ == '__main__':
 
     np.set_printoptions(precision=2)
 
+    steps_per_epoch = opt.epoch_steps
+    epoch_start = time.perf_counter()
+
     for i in range(1000*1000*1000):
         sac.train(batch_size=opt.batch_size, batch_count=32)
         lossQ = sum(sac.logger.epoch_dict['LossQ'][-opt.batch_size:])/opt.batch_size
@@ -376,7 +380,9 @@ if __name__ == '__main__':
 
         model_name = f"checkpoints/sac-{wandb.run.name}-{i:05d}.onnx"
 
-        if i % 20 == 0:
+        epoch_ends = i % steps_per_epoch == 0
+
+        if i % 20 == 0 or epoch_ends:
             action_samples = sac.sample_actions(8).detach().cpu().numpy()
             wandb.log(step=i, data={
                         "action_sample_stdevs": np.mean(np.std(action_samples, axis=0))
@@ -388,6 +394,8 @@ if __name__ == '__main__':
                 print(f"  LossPi: {lossPi}", file=samples_file)
                 print(action_samples, file=samples_file)
 
-        if i % 100 == 0:
+        if i > 0 and epoch_ends:
             export(sac.ac, device, model_name, sac.env)
             print("saved " + model_name)
+            print(f"avg. time per step: {(time.perf_counter() - epoch_start)/steps_per_epoch}s")
+            epoch_start = time.perf_counter()
