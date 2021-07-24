@@ -279,8 +279,7 @@ class SoftActorCritic:
         det = self.ac.pi.deterministic
         try:
             self.ac.pi.deterministic = True
-            pi, logp_pi = self.ac.pi(o)
-            return pi
+            return self.ac.pi(o)
         finally:
             self.ac.pi.deterministic = det
 

@@ -400,9 +400,13 @@ if __name__ == '__main__':
         epoch_ends = i % steps_per_epoch == 0
 
         if i % 20 == 0 or epoch_ends:
-            action_samples = sac.sample_actions(8).detach().cpu().numpy()
+            with torch.no_grad():
+                action_samples, logstd_samples = sac.sample_actions(8)
+                action_samples = action_samples.detach().cpu().numpy()
+                logstd_samples = logstd_samples.detach().cpu().numpy()
             wandb.log(step=i, data={
-                        "action_sample_stdevs": np.mean(np.std(action_samples, axis=0))
+                        "action_sample_stdevs": np.mean(np.std(action_samples, axis=0)),
+                        "logstds_avg": np.mean(logstd_samples)
                       })
             print(action_samples)
             samples_name = model_name + ".samples"
@@ -410,6 +414,7 @@ if __name__ == '__main__':
                 print(f"  LossQ: {lossQ}", file=samples_file)
                 print(f"  LossPi: {lossPi}", file=samples_file)
                 print(action_samples, file=samples_file)
+                print(logstd_samples, file=samples_file)
 
         if i > 0 and epoch_ends:
             export(sac.ac, device, model_name, sac.env)
