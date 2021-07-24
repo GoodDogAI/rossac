@@ -344,7 +344,8 @@ if __name__ == '__main__':
 
     print("filled in replay buffer")
     print(f"Took {time.perf_counter() - start_load}")
-    print(f"NaNs in {nans} of {wandb.config.num_samples} samples")
+
+    del all_entries
 
     if not os.path.exists('checkpoints'):
         os.makedirs('checkpoints')
