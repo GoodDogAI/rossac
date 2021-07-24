@@ -388,8 +388,6 @@ if __name__ == '__main__':
         sac.train(batch_size=opt.batch_size, batch_count=32)
         lossQ = sum(sac.logger.epoch_dict['LossQ'][-opt.batch_size:])/opt.batch_size
         lossPi = sum(sac.logger.epoch_dict['LossPi'][-opt.batch_size:])/opt.batch_size
-        print(f"  LossQ: {lossQ}", end=None)
-        print(f"  LossPi: {lossPi}", end=None)
 
         wandb.log(step=i,
                   data={
@@ -398,7 +396,7 @@ if __name__ == '__main__':
                   })
 
         sample_action = sac.logger.epoch_dict['Pi'][-1][0]
-        print(f"  Sample Action: velocity {sample_action[0]:.2f}  angle {sample_action[1]:.2f}  pan {sample_action[2]:.1f}  tilt {sample_action[3]:.1f}")
+        print(f"\rLoss: Q: {lossQ:.4g}, Pi: {lossPi:.4g}. Sample action: {sample_action}          ", end="")
 
         model_name = f"checkpoints/sac-{wandb.run.name}-{i:05d}.onnx"
 
@@ -413,7 +411,11 @@ if __name__ == '__main__':
                         "action_sample_stdevs": np.mean(np.std(action_samples, axis=0)),
                         "logstds_avg": np.mean(logstd_samples)
                       })
+
+            print()
             print(action_samples)
+            print()
+            
             samples_name = model_name + ".samples"
             with open(samples_name, 'w') as samples_file:
                 print(f"  LossQ: {lossQ}", file=samples_file)
@@ -423,6 +425,8 @@ if __name__ == '__main__':
 
         if i > 0 and epoch_ends:
             export(sac.ac, device, model_name, sac.env)
+            print()
             print("saved " + model_name)
             print(f"avg. time per step: {(time.perf_counter() - epoch_start)/steps_per_epoch}s")
+            print()
             epoch_start = time.perf_counter()
