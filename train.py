@@ -32,8 +32,6 @@ from dump_onnx import export
 DEFAULT_MAX_GAP_SECONDS = 5
 
 tf.disable_v2_behavior()
-wandb.init(project="sac-series1", entity="armyofrobots")
-
 
 @functools.lru_cache()
 def get_onnx_sess(onnx_path: str) -> rt.InferenceSession:
@@ -294,22 +292,6 @@ if __name__ == '__main__':
     env_fn = lambda: NormalizedRobotEnvironment(slice=backbone_slice)
     sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=opt.dropout)
 
-    # Save basic params to wandb configuration
-    wandb.config.read_dir = opt.bag_dir
-    wandb.config.reward_func_name = opt.reward
-    wandb.config.num_samples = min(len(all_entries)-1, opt.max_samples)
-    wandb.config.batch_size = opt.batch_size
-    wandb.config.gamma = sac.gamma
-    wandb.config.polyak = sac.polyak
-    wandb.config.lr = sac.lr
-    wandb.config.alpha = sac.alpha
-    wandb.config.dropout = sac.dropout
-    wandb.config.device = str(device)
-    wandb.config.reward_delay_ms = opt.reward_delay_ms
-    wandb.config.backbone_slice = backbone_slice
-
-    wandb.watch(sac.ac, log="gradients", log_freq=100)  # Log gradients periodically
-
     env = env_fn()
 
     def normalize_pantilt(pantilt):
@@ -324,9 +306,11 @@ if __name__ == '__main__':
                                interpolated_entry.vbus,
                                interpolated_entry.yolo_intermediate[::backbone_slice]])
 
+    num_samples = min(len(all_entries)-1, opt.max_samples)
+
     nans = 0
     oobs = 0
-    for i in tqdm(range(wandb.config.num_samples)):
+    for i in tqdm(range(num_samples)):
         entry = all_entries.iloc[i]
         next_entry = all_entries.iloc[i+1]
 
@@ -356,7 +340,25 @@ if __name__ == '__main__':
 
     print("filled in replay buffer")
     print(f"Took {time.perf_counter() - start_load}")
-    print(f"NaNs in {nans} of {wandb.config.num_samples} samples, large obs in {oobs}")
+    print(f"NaNs in {nans} of {num_samples} samples, large obs in {oobs}")
+
+    wandb.init(project="sac-series1", entity="armyofrobots")
+
+     # Save basic params to wandb configuration
+    wandb.config.read_dir = opt.bag_dir
+    wandb.config.reward_func_name = opt.reward
+    wandb.config.num_samples = num_samples
+    wandb.config.batch_size = opt.batch_size
+    wandb.config.gamma = sac.gamma
+    wandb.config.polyak = sac.polyak
+    wandb.config.lr = sac.lr
+    wandb.config.alpha = sac.alpha
+    wandb.config.dropout = opt.dropout
+    wandb.config.device = str(device)
+    wandb.config.reward_delay_ms = opt.reward_delay_ms
+    wandb.config.backbone_slice = backbone_slice
+
+    wandb.watch(sac.ac, log="gradients", log_freq=100)  # Log gradients periodically
 
     del all_entries
 
