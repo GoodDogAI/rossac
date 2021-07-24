@@ -332,7 +332,7 @@ if __name__ == '__main__':
         obs = make_observation(entry)
         future_obs = make_observation(next_entry)
 
-        if np.isnan(obs).any() or np.isnan(future_obs).any():
+        if np.isnan(obs).any() or np.isnan(future_obs).any() or np.isnan(reward).any():
             nans += 1
             continue
 
