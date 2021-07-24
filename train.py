@@ -32,6 +32,8 @@ from dump_onnx import export
 
 DEFAULT_MAX_GAP_SECONDS = 5
 
+DEFAULT_PUNISHMENT_MULTIPLIER = 800
+
 tf.disable_v2_behavior()
 
 @functools.lru_cache()
@@ -124,6 +126,9 @@ class BagEntries:
     # robot bus voltage, in Volts
     vbus: Dict[int, np.ndarray] = field(default_factory=dict)
 
+    # indicates reward from stop button (0 = unpressed, -1 = pressed)
+    punishment: Dict[int, np.ndarray] = field(default_factory=dict)
+
 
 DATAFRAME_COLUMNS = [
     # The first entry is the one that we will interpolate over
@@ -137,19 +142,21 @@ DATAFRAME_COLUMNS = [
     "odrive_feedback",
     "head_gyro",
     "head_accel",
-    "vbus"
+    "vbus",
+    "punishment",
 ]
 
 
 def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
-            reward_delay_ms: int) -> pd.DataFrame:
+            reward_delay_ms: int, punish_backtrack_ms: int) -> pd.DataFrame:
     print(f"Opening {bag_file}")
-    bag_cache_name = os.path.join(opt.cache_dir, f"{os.path.basename(bag_file)}_{reward_func_name}_+{reward_delay_ms}ms.arrow")
+    bag_cache_name = os.path.join(opt.cache_dir, f"{os.path.basename(bag_file)}_{reward_func_name}_+{reward_delay_ms}ms_-{punish_backtrack_ms}ms.arrow")
 
     try:
         return _read_mmapped_bag(bag_cache_name)
     except IOError:
-        write_bag_cache(bag_file, bag_cache_name, backbone_onnx_path, reward_func_name, reward_delay_ms)
+        write_bag_cache(bag_file, bag_cache_name, backbone_onnx_path, reward_func_name,
+                        reward_delay_ms=reward_delay_ms, punish_backtrack_ms=punish_backtrack_ms)
         return _read_mmapped_bag(bag_cache_name)
 
 
@@ -160,7 +167,7 @@ def _read_mmapped_bag(bag_cache_name: str) -> pd.DataFrame:
 
 
 def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str,
-                    reward_delay_ms: int):
+                    reward_delay_ms: int, punish_backtrack_ms: int):
     bag = rosbag.Bag(bag_file, 'r')
     entries = defaultdict(dict)
     reward_func = getattr(yolo_reward, reward_func_name)
@@ -177,6 +184,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
                   '/head_feedback',
                   '/cmd_vel',
                   '/odrive_feedback',
+                  '/reward_button',
                   '/vbus']
 
     for topic, msg, ts in bag.read_messages(ros_topics):
@@ -207,6 +215,8 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
 
             entries["yolo_intermediate"][full_ts] = _flatten(intermediate)
             entries["reward"][full_ts + reward_delay_ms * 1000000] = reward
+        elif topic == '/reward_button':
+            entries["punishment"][full_ts + punish_backtrack_ms * 1000000] = np.array([msg.data])
         elif topic == '/dynamixel_workbench/dynamixel_state':
             entries["dynamixel_cur_state"][full_ts] = np.array([msg.dynamixel_state[0].present_position,
                                                                 msg.dynamixel_state[1].present_position])
@@ -257,6 +267,7 @@ if __name__ == '__main__':
     parser.add_argument('--max-samples', type=int, default=20000, help='max number of training samples to load at once')
     parser.add_argument('--cpu', default=False, action="store_true", help='run training on CPU only')
     parser.add_argument('--reward-delay-ms', type=int, default=100, help='delay reward from action by the specified amount of milliseconds')
+    parser.add_argument('--punish-backtrack-ms', type=int, default=4000, help='backtrack punishment by the button by the specified amount of milliseconds')
     # default rate for dropout assumes small inputs (order of 1024 elements)
     parser.add_argument('--dropout', type=float, default=0.88, help='input dropout rate for training')
     parser.add_argument('--backbone-slice', type=int, default=None, help='use every nth datapoint of the backbone')
@@ -286,7 +297,9 @@ if __name__ == '__main__':
     all_entries = None
 
     for bag_path in glob.glob(os.path.join(opt.bag_dir, "*.bag")):
-        entries = read_bag(bag_path, opt.onnx, opt.reward, opt.reward_delay_ms)
+        entries = read_bag(bag_path, opt.onnx, opt.reward,
+                           reward_delay_ms=opt.reward_delay_ms,
+                           punish_backtrack_ms=opt.punish_backtrack_ms)
 
         if all_entries is None:
             all_entries = entries
@@ -321,6 +334,8 @@ if __name__ == '__main__':
 
     nans = 0
     oobs = 0
+    dones = 0
+    last_terminated = False
     for i in tqdm(range(num_samples)):
         entry = all_entries.iloc[i]
         next_entry = all_entries.iloc[i+1]
@@ -333,6 +348,7 @@ if __name__ == '__main__':
         if move_penalty + pantilt_penalty > 10:
             print("WARNING: high move penalty!")
         reward = entry.reward - (move_penalty + pantilt_penalty)
+        reward += next_entry.punishment * DEFAULT_PUNISHMENT_MULTIPLIER
 
         obs = make_observation(entry)
         future_obs = make_observation(next_entry)
@@ -345,15 +361,23 @@ if __name__ == '__main__':
             oobs += 1
             continue
 
+        terminated = next_entry.punishment < -0.0
+        if terminated and last_terminated:
+            continue
+        last_terminated = terminated
+        if terminated:
+            dones += 1
+
         sac.replay_buffer.store(obs=obs,
             act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
             rew=reward,
             next_obs=future_obs,
-            done=False)
+            done=terminated)
 
     print("filled in replay buffer")
     print(f"Took {time.perf_counter() - start_load}")
     print(f"NaNs in {nans} of {num_samples} samples, large obs in {oobs}")
+    print(f"avg. episode len: {(num_samples + 1) / (dones + 1)}")
 
     wandb.init(project="sac-series1", entity="armyofrobots")
 
