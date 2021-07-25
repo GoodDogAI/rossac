@@ -122,7 +122,7 @@ class MLPActorCritic(nn.Module):
                 self.pi.deterministic = deterministic
                 self.pi.with_logprob = False
                 a, _ = self.pi(obs)
-                return a.numpy()
+                return a.cpu().numpy()
         finally:
             self.pi.deterministic = old_deterministic
             self.pi.with_logprob = old_with_logprob
