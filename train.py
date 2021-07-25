@@ -236,7 +236,9 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
                                                       msg.angular_velocity.z])
         elif topic == "/odrive_feedback":
             entries["odrive_feedback"][full_ts] = np.array([msg.motor_vel_actual_0,
-                                                            msg.motor_vel_actual_1])
+                                                            msg.motor_vel_actual_1,
+                                                            msg.motor_vel_cmd_0,
+                                                            msg.motor_vel_cmd_1])
         elif topic == "/vbus":
             entries["vbus"][full_ts] = np.array([msg.data])
         else:
@@ -327,7 +329,7 @@ if __name__ == '__main__':
         return np.concatenate([pan_curr, tilt_curr,
                                interpolated_entry.head_gyro,
                                interpolated_entry.head_accel,
-                               interpolated_entry.odrive_feedback,
+                               interpolated_entry.odrive_feedback[0:2], # Only the actual vel, not the commanded vel
                                interpolated_entry.vbus,
                                interpolated_entry.yolo_intermediate[::backbone_slice]])
 
