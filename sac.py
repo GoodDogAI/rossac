@@ -1,6 +1,7 @@
 from copy import deepcopy
 import itertools
 import numpy as np
+import os
 import torch
 from torch.nn import Dropout
 from torch.optim import Adam
@@ -177,9 +178,7 @@ class SoftActorCritic:
         self.ac = self._to_device(self.ac)
         self.ac_targ = self._to_device(self.ac_targ)
 
-        # Freeze target networks with respect to optimizers (only update via polyak averaging)
-        for p in self.ac_targ.parameters():
-            p.requires_grad = False
+        self._freeze_target()
 
         # List of parameters for both Q-networks (save this for convenience)
         self.q_params = itertools.chain(self.ac.q1.parameters(), self.ac.q2.parameters())
@@ -352,6 +351,33 @@ class SoftActorCritic:
         if self.device:
             return module.to(self.device)
         return module
+
+    def _freeze_target(self):
+        # Freeze target networks with respect to optimizers (only update via polyak averaging)
+        for p in self.ac_targ.parameters():
+            p.requires_grad = False
+
+    def save(self, path, **kwargs):
+        dict = {
+            'ac': self.ac.state_dict(),
+            'ac_targ': self.ac_targ.state_dict(),
+            'pi_opt': self.pi_optimizer.state_dict(),
+            'q_opt': self.q_optimizer.state_dict(),
+        }
+        dict.update(kwargs)
+        torch.save(dict, path)
+    
+    def load(self, path):
+        checkpoint = torch.load(path)
+        self.ac.load_state_dict(checkpoint['ac'])
+        self.ac.train()
+        self.ac_targ.load_state_dict(checkpoint['ac_targ'])
+        self.ac_targ.train()
+        self._freeze_target()
+        self.pi_optimizer.load_state_dict(checkpoint['pi_opt'])
+        self.q_optimizer.load_state_dict(checkpoint['q_opt'])
+        return checkpoint
+
 
 
 if __name__ == '__main__':

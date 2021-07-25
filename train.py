@@ -275,6 +275,7 @@ if __name__ == '__main__':
     parser.add_argument('--epoch-steps', type=int, default=100, help='how often to save checkpoints')
     parser.add_argument('--seed', type=int, default=None, help='training seed')
     parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
+    parser.add_argument('--checkpoint-path', type=str, default='checkpoint/sac.tar', help='path to save/load checkpoint from')
     opt = parser.parse_args()
 
     if torch.cuda.is_available() and not opt.cpu:
@@ -379,7 +380,12 @@ if __name__ == '__main__':
     print(f"NaNs in {nans} of {num_samples} samples, large obs in {oobs}")
     print(f"avg. episode len: {(num_samples + 1) / (dones + 1)}")
 
-    wandb.init(project="sac-series1", entity="armyofrobots")
+    resume_dict = sac.load(opt.checkpoint_path) if os.path.exists(opt.checkpoint_path) else None
+
+    wandb.init(project="sac-series1", entity="armyofrobots",
+               resume=resume_dict is not None,
+               name=resume_dict['run_name'] if resume_dict is not None else None,
+               id=resume_dict['run_id'] if resume_dict is not None else None)
 
      # Save basic params to wandb configuration
     wandb.config.read_dir = opt.bag_dir
@@ -394,7 +400,8 @@ if __name__ == '__main__':
     wandb.config.device = str(device)
     wandb.config.reward_delay_ms = opt.reward_delay_ms
     wandb.config.backbone_slice = backbone_slice
-    wandb.config.seed = opt.seed
+    if resume_dict is None:
+        wandb.config.seed = opt.seed
 
     wandb.watch(sac.ac, log="gradients", log_freq=100)  # Log gradients periodically
 
@@ -408,10 +415,12 @@ if __name__ == '__main__':
     steps_per_epoch = opt.epoch_steps
     epoch_start = time.perf_counter()
 
-    for i in range(1000*1000*1000):
-        sac.train(batch_size=opt.batch_size, batch_count=32)
-        lossQ = sum(sac.logger.epoch_dict['LossQ'][-opt.batch_size:])/opt.batch_size
-        lossPi = sum(sac.logger.epoch_dict['LossPi'][-opt.batch_size:])/opt.batch_size
+    i = resume_dict['step']+1 if resume_dict is not None else 0
+    batches_per_step = 32
+    while True:
+        sac.train(batch_size=opt.batch_size, batch_count=batches_per_step)
+        lossQ = sum(sac.logger.epoch_dict['LossQ'][-batches_per_step:])/batches_per_step
+        lossPi = sum(sac.logger.epoch_dict['LossPi'][-batches_per_step:])/batches_per_step
 
         wandb.log(step=i,
                   data={
@@ -420,9 +429,9 @@ if __name__ == '__main__':
                   })
 
         sample_action = sac.logger.epoch_dict['Pi'][-1][0]
-        print(f"\rLoss: Q: {lossQ:.4g}, Pi: {lossPi:.4g}. Sample action: {sample_action}          ", end="")
+        print(f"\r{i:03d} Loss: Q: {lossQ:.4g}, Pi: {lossPi:.4g}. Sample action: {sample_action}          ", end="")
 
-        model_name = f"checkpoints/sac-{wandb.run.name}-{i:05d}.onnx"
+        checkpoint_name = f"checkpoints/sac-{wandb.run.name}-{i:05d}"
 
         epoch_ends = i % steps_per_epoch == 0
 
@@ -440,7 +449,7 @@ if __name__ == '__main__':
             print(action_samples)
             print()
             
-            samples_name = model_name + ".samples"
+            samples_name = checkpoint_name + ".samples"
             with open(samples_name, 'w') as samples_file:
                 print(f"  LossQ: {lossQ}", file=samples_file)
                 print(f"  LossPi: {lossPi}", file=samples_file)
@@ -448,9 +457,18 @@ if __name__ == '__main__':
                 print(logstd_samples, file=samples_file)
 
         if i > 0 and epoch_ends:
-            export(sac.ac, device, model_name, sac.env)
+            export(sac.ac, device, checkpoint_name + '.onnx', sac.env)
+            sac.save(opt.checkpoint_path,
+                     run_name=wandb.run.name,
+                     run_id=wandb.run.id,
+                     step=i,
+                     seed=opt.seed)
+
+
             print()
-            print("saved " + model_name)
+            print("saved " + checkpoint_name)
             print(f"avg. time per step: {(time.perf_counter() - epoch_start)/steps_per_epoch}s")
             print()
             epoch_start = time.perf_counter()
+        
+        i += 1
