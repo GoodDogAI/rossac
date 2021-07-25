@@ -32,7 +32,7 @@ from dump_onnx import export
 
 DEFAULT_MAX_GAP_SECONDS = 5
 
-DEFAULT_PUNISHMENT_MULTIPLIER = 800
+DEFAULT_PUNISHMENT_MULTIPLIER = 16
 
 tf.disable_v2_behavior()
 
