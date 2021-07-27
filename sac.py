@@ -286,18 +286,28 @@ class SoftActorCritic:
                 p_targ.data.add_((1 - self.polyak) * p.data)
 
     def get_action(self, observation, deterministic=False):
-        return self.ac.act(torch.as_tensor(observation, dtype=torch.float32),
+        return self.ac.act(torch.as_tensor(observation, dtype=torch.float32, device=self.device),
                            deterministic)
 
     def test_agent(self, episode_count):
+        avg_rew = 0
+        avg_action = 0
+        step_count = 0
         for j in range(episode_count):
             o, d, ep_ret, ep_len = self.test_env.reset(), False, 0, 0
             while not (d or (ep_len == self.max_ep_len)):
                 # Take deterministic actions at test time
-                o, r, d, _ = self.test_env.step(self.get_action(o, True))
+                action = self.get_action(o, True)
+                step_count += 1
+                avg_action += abs(action)
+                o, r, d, _ = self.test_env.step(action)
                 ep_ret += r
                 ep_len += 1
+            avg_rew += ep_ret
             self.logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
+        avg_rew /= episode_count
+        avg_action /= step_count
+        return avg_rew, avg_action
 
     def train(self, batch_size, batch_count):
         for j in range(batch_count):
@@ -391,6 +401,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--exp_name', type=str, default='sac')
+    parser.add_argument('--cpu', default=False, action='store_true')
     args = parser.parse_args()
 
     from spinup.utils.run_utils import setup_logger_kwargs
@@ -399,20 +410,45 @@ if __name__ == '__main__':
 
     torch.set_num_threads(torch.get_num_threads())
 
+    batches_per_step = 10
+    batch_size = 100
+
+    if args.seed:
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+
+    replay_buffer_factory = ReplayBuffer
+    if torch.cuda.is_available() and not args.cpu:
+        device = torch.device("cuda")
+        replay_buffer_factory = lambda obs_dim, act_dim, size: TorchReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, size=size, device=device)
+        print("Using CUDA")
+    else:
+        device = None
+        print("Using CPU")
+
     sac = SoftActorCritic(lambda: gym.make(args.env), actor_critic=core.MLPActorCritic,
+        device=device, replay_buffer_factory=replay_buffer_factory,
         ac_kwargs=dict(hidden_sizes=[args.hid] * args.l),
-        gamma=args.gamma, seed=args.seed,
+        gamma=args.gamma,
         logger_kwargs=logger_kwargs)
     print('collecting observations from random actions...')
     sac.collect_observations(steps=10000, use_brain=False)
     print('initial training...')
-    sac.train(batch_size=100, batch_count=10)
+    sac.train(batch_size=batch_size, batch_count=10)
     print('')
     for epoch in range(0, args.epochs):
         print('epoch {}: playing around...'.format(epoch))
         sac.collect_observations(steps=1000, use_brain=True)
         print('epoch {}: grokking...'.format(epoch))
-        sac.train(batch_size=100, batch_count=10)
-        print('epoch {}: self-testing...'.format(epoch))
-        sac.test_agent(episode_count=10)
-        print('epoch {}: DONE\n'.format(epoch))
+        
+        sac.train(batch_size=batch_size, batch_count=batches_per_step)
+
+        lossQ = sum(sac.logger.epoch_dict['LossQ'][-batches_per_step:])/batches_per_step
+        lossPi = sum(sac.logger.epoch_dict['LossPi'][-batches_per_step:])/batches_per_step
+        sample_action = sac.logger.epoch_dict['Pi'][-1][0]
+
+        print(f"{epoch:03d} Loss: Q: {lossQ:.4g}, Pi: {lossPi:.4g}. Sample action: {sample_action}          ")
+
+        print('self-testing...', end='')
+        avg_rew, avg_act = sac.test_agent(episode_count=10)
+        print(' avg. reward: {} avg. abs action: {}\n'.format(avg_rew, avg_act))
