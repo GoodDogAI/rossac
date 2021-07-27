@@ -2,6 +2,7 @@ import argparse
 import functools
 import os.path
 import random
+import shutil
 import time
 
 import wandb
@@ -442,6 +443,7 @@ if __name__ == '__main__':
                 action_samples, logstd_samples = sac.sample_actions(8)
                 action_samples = action_samples.detach().cpu().numpy()
                 logstd_samples = logstd_samples.detach().cpu().numpy()
+
             wandb.log(step=i, data={
                         "action_sample_stdevs": np.mean(np.std(action_samples, axis=0)),
                         "logstds_avg": np.mean(logstd_samples)
@@ -466,6 +468,7 @@ if __name__ == '__main__':
                      step=i,
                      seed=opt.seed)
 
+            shutil.copyfile(src=opt.checkpoint_path, dst=checkpoint_name + '.tar')
 
             print()
             print("saved " + checkpoint_name)
