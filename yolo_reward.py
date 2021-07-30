@@ -43,7 +43,7 @@ class BBox:
     y: int
     width: int
     height: int
-    class_idx: int
+    class_name: str
     confidence: float
 
 yolo1 = YoloKernel(input_w // 32, input_h // 32, (116,90,  156,198,  373,326))
@@ -67,12 +67,12 @@ def detect_yolo_bboxes(prediction: np.ndarray, kernel: YoloKernel) -> List[BBox]
                     class_prob = prediction[0, c, row, col, 5 + class_idx]
                     class_prob *= box_prob
 
-                    if class_prob > 0.80:
+                    if class_prob > 0.50:
                         result.append(BBox(x=(col - 0.5 + 2 * prediction[0, c, row, col, 0]) * input_w / kernel.width,
                                            y=(row - 0.5 + 2 * prediction[0, c, row, col, 1]) * input_w / kernel.width,
                                            width=(2*prediction[0, c, row, col, 2])**2*kernel.anchors[2*c],
                                            height=(2*prediction[0, c, row, col, 3])**2*kernel.anchors[2*c + 1],
-                                           class_idx=class_idx,
+                                           class_name=class_names[class_idx],
                                            confidence=class_prob))
 
     return result
@@ -114,16 +114,18 @@ def sum_centered_objects_present(pred: List[np.ndarray]) -> float:
 
 def get_prediction(sess: rt.InferenceSession, image_np: np.ndarray) -> List[np.ndarray]:
     # First shape it into the 1xWxHx1 format
-    image_np = image_np.reshape((1, image_np.shape[1], image_np.shape[0], 1))
+    # Go from (H, W) to (1, H, W, 1)
+    image_np = np.expand_dims(image_np, 0)
+    image_np = np.expand_dims(image_np, -1)
 
-    # Now broadcast to 1xWxHx3
+    # Now broadcast to 1xHxWx3
     image_np = image_np * np.ones(dtype=image_np.dtype, shape=(image_np.shape[0], image_np.shape[1], image_np.shape[2], 3))
 
-    assert image_np.shape[1] == input_w
-    assert image_np.shape[2] == input_h
+    assert image_np.shape[2] == input_w
+    assert image_np.shape[1] == input_h
 
     # Now convert to NCHW
-    image_np = image_np.transpose((0, 3, 2, 1))
+    image_np = image_np.transpose((0, 3, 1, 2))
     # Scale to 0 to -1
     image_np = image_np / 255.0
     image_np = image_np.astype(np.float32)
