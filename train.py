@@ -477,3 +477,4 @@ if __name__ == '__main__':
             epoch_start = time.perf_counter()
         
         i += 1
+        sac.logger.epoch_dict.clear()  # Reset the log buffer, otherwise it would retain data from all steps
