@@ -396,7 +396,8 @@ if __name__ == '__main__':
     if resume_dict and num_samples > wandb.config.num_samples:
         print(f'run upgraded from {wandb.config.num_samples} to {num_samples}, but wandb will not have that information')
     else:
-    wandb.config.num_samples = num_samples
+        wandb.config.num_samples = num_samples
+
     wandb.config.batch_size = opt.batch_size
     wandb.config.gamma = sac.gamma
     wandb.config.polyak = sac.polyak
