@@ -428,7 +428,7 @@ if __name__ == '__main__':
     if resume_dict is None:
         wandb.config.seed = opt.seed
 
-    wandb.watch(sac.ac, log="gradients", log_freq=100)  # Log gradients periodically
+    wandb.watch(sac.ac, log="all", log_freq=100)  # Log gradients periodically
 
     del all_entries
 
