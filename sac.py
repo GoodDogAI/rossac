@@ -191,8 +191,8 @@ class SoftActorCritic:
         self.logger.log('\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n' % var_counts)
 
         # Set up optimizers for policy and q-function
-        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=lr)
-        self.q_optimizer = Adam(self.q_params, lr=lr)
+        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=lr, eps=3e-6)
+        self.q_optimizer = Adam(self.q_params, lr=lr, eps=3e-6)
 
         self.dropout = Dropout(p=dropout)
 
