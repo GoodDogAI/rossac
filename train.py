@@ -107,14 +107,26 @@ DATAFRAME_COLUMNS = [
     "yolo_intermediate",
     "reward",
 
+    # pan, tilt in steps, (1024 steps = 300 degrees)
     "dynamixel_cur_state",
     "dynamixel_command_state",
 
+    # commanded forward speed, rotational speed
     "cmd_vel",
+
+    # Each wheels actual speed in rotations per second
     "odrive_feedback",
+
+    # head gyro rate, in radians per second
     "head_gyro",
+
+    # head acceleration, in meters per second
     "head_accel",
+
+    # robot bus voltage, in Volts
     "vbus",
+
+    # indicates reward from stop button (0 = unpressed, -1 = pressed)
     "punishment",
 ]
 
@@ -299,10 +311,10 @@ if __name__ == '__main__':
     def make_observation(interpolated_entry):
         pan_curr, tilt_curr = normalize_pantilt(interpolated_entry.dynamixel_cur_state)
         return np.concatenate([pan_curr, tilt_curr,
-                               interpolated_entry.head_gyro,
-                               interpolated_entry.head_accel,
-                               interpolated_entry.odrive_feedback[0:2], # Only the actual vel, not the commanded vel
-                               interpolated_entry.vbus,
+                               interpolated_entry.head_gyro / 10.0,  # Divide radians/sec by ten to center around 0 closer
+                               (interpolated_entry.head_accel - [0, -10, 0]) / 10.0,  # Divide m/s by 10, and center the y axis
+                               interpolated_entry.odrive_feedback[0:2],  # Only the actual vel, not the commanded vel
+                               interpolated_entry.vbus - 27.0,  # Volts different from ~50% charge
                                interpolated_entry.yolo_intermediate[::backbone_slice]])
 
     num_samples = min(len(all_entries)-1, opt.max_samples)
