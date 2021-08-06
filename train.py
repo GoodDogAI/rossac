@@ -266,7 +266,8 @@ if __name__ == '__main__':
     parser.add_argument("--camera_topic", default='/camera/infra2/image_rect_raw')
     parser.add_argument("--reward", default='sum_centered_objects_present')
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
-    parser.add_argument('--batch-size', type=int, default=1024, help='number of samples per training step')
+    parser.add_argument('--batch-size', type=int, default=128, help='number of samples per training step')
+    parser.add_argument('--batches-per-step', type=int, default=256, help='number of batches per training step')
     parser.add_argument('--max-samples', type=int, default=20000, help='max number of training samples to load at once')
     parser.add_argument('--cpu', default=False, action="store_true", help='run training on CPU only')
     parser.add_argument('--reward-delay-ms', type=int, default=100, help='delay reward from action by the specified amount of milliseconds')
@@ -423,6 +424,7 @@ if __name__ == '__main__':
     wandb.config.lr_actor_schedule = opt.lr_actor_schedule
     wandb.config.actor_hidden_sizes = opt.actor_hidden_sizes
     wandb.config.critic_hidden_sizes = opt.critic_hidden_sizes
+    wandb.config.batches_per_step = opt.batches_per_step
     if resume_dict is None:
         wandb.config.seed = opt.seed
 
@@ -439,7 +441,7 @@ if __name__ == '__main__':
     epoch_start = time.perf_counter()
 
     i = resume_dict['step']+1 if resume_dict is not None else 0
-    batches_per_step = 32
+    batches_per_step = opt.batches_per_step
 
     def lr_scheduler(optim, lambda_code):
         return torch.optim.lr_scheduler.LambdaLR(
