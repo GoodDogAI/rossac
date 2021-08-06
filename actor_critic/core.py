@@ -99,20 +99,22 @@ class MLPQFunction(nn.Module):
 
 class MLPActorCritic(nn.Module):
 
-    def __init__(self, observation_space, action_space, hidden_sizes=(256,256),
+    def __init__(self, observation_space, action_space,
+                 actor_hidden_sizes=(512,256,256),
+                 critic_hidden_sizes=(512,256,256),
                  activation=nn.SELU):
         super().__init__()
 
-        if len(hidden_sizes) == 0:
+        if len(actor_hidden_sizes) == 0 or len(critic_hidden_sizes) == 0:
             raise ValueError("Must have at least one hidden layer")
 
         obs_dim = observation_space.shape[0]
         act_dim = action_space.shape[0]
 
         # build policy and value functions
-        self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, hidden_sizes, activation, action_space)
-        self.q1 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
-        self.q2 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
+        self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, actor_hidden_sizes, activation, action_space)
+        self.q1 = MLPQFunction(obs_dim, act_dim, critic_hidden_sizes, activation)
+        self.q2 = MLPQFunction(obs_dim, act_dim, critic_hidden_sizes, activation)
 
     def act(self, obs, deterministic=False):
         old_deterministic = self.pi.deterministic

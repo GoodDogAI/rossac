@@ -249,7 +249,8 @@ if __name__ == '__main__':
     parser.add_argument("--camera_topic", default='/camera/infra2/image_rect_raw')
     parser.add_argument("--reward", default='sum_centered_objects_present')
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
-    parser.add_argument('--batch-size', type=int, default=1024, help='number of samples per training step')
+    parser.add_argument('--batch-size', type=int, default=128, help='number of samples per training step')
+    parser.add_argument('--batches-per-step', type=int, default=256, help='number of batches per training step')
     parser.add_argument('--max-samples', type=int, default=20000, help='max number of training samples to load at once')
     parser.add_argument('--cpu', default=False, action="store_true", help='run training on CPU only')
     parser.add_argument('--reward-delay-ms', type=int, default=100, help='delay reward from action by the specified amount of milliseconds')
@@ -261,6 +262,10 @@ if __name__ == '__main__':
     parser.add_argument('--epoch-steps', type=int, default=100, help='how often to save checkpoints')
     parser.add_argument('--seed', type=int, default=None, help='training seed')
     parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
+    parser.add_argument('--lr-critic-schedule', default="lambda step: max(5e-6, 0.9998465 ** step) / 5", help='learning rate schedule (Python lambda) for critic network')
+    parser.add_argument('--lr-actor-schedule', default="lambda step: max(5e-6, 0.9998465 ** step)", help='learning rate schedule (Python lambda) for actor network')
+    parser.add_argument('--actor-hidden-sizes', type=str, default='512,256,256', help='actor network hidden layer sizes')
+    parser.add_argument('--critic-hidden-sizes', type=str, default='512,256,256', help='critic network hidden layer sizes')
     parser.add_argument('--checkpoint-path', type=str, default='checkpoint/sac.tar', help='path to save/load checkpoint from')
     opt = parser.parse_args()
 
@@ -300,7 +305,15 @@ if __name__ == '__main__':
     replay_buffer_factory = ReplayBuffer
     if opt.gpu_replay_buffer:
         replay_buffer_factory = lambda obs_dim, act_dim, size: TorchReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, size=size, device=device)
+
+    actor_hidden_sizes = eval('[' + opt.actor_hidden_sizes + ']')
+    critic_hidden_sizes = eval('[' + opt.critic_hidden_sizes + ']')
+    actor_critic_args = {
+        'actor_hidden_sizes': actor_hidden_sizes,
+        'critic_hidden_sizes': critic_hidden_sizes,
+    }
     sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=opt.dropout,
+                          ac_kwargs=actor_critic_args,
                           replay_buffer_factory=replay_buffer_factory)
 
     env = env_fn()
@@ -391,6 +404,11 @@ if __name__ == '__main__':
     wandb.config.device = str(device)
     wandb.config.reward_delay_ms = opt.reward_delay_ms
     wandb.config.backbone_slice = backbone_slice
+    wandb.config.lr_critic_schedule = opt.lr_critic_schedule
+    wandb.config.lr_actor_schedule = opt.lr_actor_schedule
+    wandb.config.actor_hidden_sizes = opt.actor_hidden_sizes
+    wandb.config.critic_hidden_sizes = opt.critic_hidden_sizes
+    wandb.config.batches_per_step = opt.batches_per_step
     if resume_dict is None:
         wandb.config.seed = opt.seed
 
@@ -407,8 +425,21 @@ if __name__ == '__main__':
     epoch_start = time.perf_counter()
 
     i = resume_dict['step']+1 if resume_dict is not None else 0
-    batches_per_step = 32
+    batches_per_step = opt.batches_per_step
+
+    def lr_scheduler(optim, lambda_code):
+        return torch.optim.lr_scheduler.LambdaLR(
+            optim,
+            # exponential decay; reduces lr by 100x every 30k steps
+            lr_lambda=eval(lambda_code),
+            last_epoch=i-1)
+    pi_lr_schedule = lr_scheduler(sac.pi_optimizer, opt.lr_actor_schedule)
+    q_lr_schedule = lr_scheduler(sac.q_optimizer, opt.lr_critic_schedule)
+
     while True:
+        pi_lr_schedule.step()
+        q_lr_schedule.step()
+
         sac.train(batch_size=opt.batch_size, batch_count=batches_per_step)
         lossQ = sum(sac.logger.epoch_dict['LossQ'][-batches_per_step:])/batches_per_step
         lossPi = sum(sac.logger.epoch_dict['LossPi'][-batches_per_step:])/batches_per_step
@@ -417,6 +448,8 @@ if __name__ == '__main__':
                   data={
                       "LossQ": lossQ,
                       "LossPi": lossPi,
+                      "LR_Q": q_lr_schedule.get_last_lr()[0],
+                      "LR_Pi": pi_lr_schedule.get_last_lr()[0],
                   })
 
         sample_action = sac.logger.epoch_dict['Pi'][-1][0]
