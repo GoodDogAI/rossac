@@ -81,6 +81,8 @@ class SoftActorCritic:
             max_ep_len=1000,
             device=None,
             dropout=0.88,
+            grad_clip_pi=0.5,
+            grad_clip_q=5.0,
             replay_buffer_factory=ReplayBuffer,
             logger_kwargs=dict()):
         """
@@ -161,6 +163,8 @@ class SoftActorCritic:
         self.gamma = gamma
         self.polyak = polyak
         self.lr = lr
+        self.grad_clip_pi = grad_clip_pi
+        self.grad_clip_q = grad_clip_q
 
         self.device = device
 
@@ -254,6 +258,7 @@ class SoftActorCritic:
         self.q_optimizer.zero_grad()
         loss_q, q_info = self.compute_loss_q(data)
         loss_q.backward()
+        torch.nn.utils.clip_grad_norm_(self.q_params, self.grad_clip_q)
         self.q_optimizer.step()
 
         # Record things
@@ -268,6 +273,7 @@ class SoftActorCritic:
         self.pi_optimizer.zero_grad()
         loss_pi, pi_info = self.compute_loss_pi(data)
         loss_pi.backward()
+        torch.nn.utils.clip_grad_norm_(self.ac.pi.parameters(), self.grad_clip_pi)
         self.pi_optimizer.step()
 
         # Unfreeze Q-networks so you can optimize it at next DDPG step.

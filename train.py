@@ -312,7 +312,7 @@ if __name__ == '__main__':
         pan_curr, tilt_curr = normalize_pantilt(interpolated_entry.dynamixel_cur_state)
         return np.concatenate([pan_curr, tilt_curr,
                                interpolated_entry.head_gyro / 10.0,  # Divide radians/sec by ten to center around 0 closer
-                               (interpolated_entry.head_accel - [0, -10, 0]) / 10.0,  # Divide m/s by 10, and center the y axis
+                               interpolated_entry.head_accel / 10.0,  # Divide m/s by 10, and center the y axis
                                interpolated_entry.odrive_feedback[0:2],  # Only the actual vel, not the commanded vel
                                interpolated_entry.vbus - 27.0,  # Volts different from ~50% charge
                                interpolated_entry.yolo_intermediate[::backbone_slice]])
@@ -434,9 +434,9 @@ if __name__ == '__main__':
             wandb.log(step=i, data={
                         "action_sample_stdevs": np.mean(np.std(action_samples, axis=0)),
                         "logstds_avg": np.mean(logstd_samples),
-                        "pi_grad_l2": max(np.linalg.norm(p.grad.cpu()) for p in sac.ac.pi.parameters()),
-                        "q1_grad_l2": max(np.linalg.norm(p.grad.cpu()) for p in sac.ac.q1.parameters()),
-                        "q2_grad_l2": max(np.linalg.norm(p.grad.cpu()) for p in sac.ac.q2.parameters()),
+                        "pi_grad_l2": max(np.linalg.norm(p.grad.detach().cpu()) for p in sac.ac.pi.parameters()),
+                        "q1_grad_l2": max(np.linalg.norm(p.grad.detach().cpu()) for p in sac.ac.q1.parameters()),
+                        "q2_grad_l2": max(np.linalg.norm(p.grad.detach().cpu()) for p in sac.ac.q2.parameters()),
                       })
 
             print()
