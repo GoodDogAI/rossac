@@ -448,6 +448,8 @@ if __name__ == '__main__':
                   data={
                       "LossQ": lossQ,
                       "LossPi": lossPi,
+                      "LR_Q": q_lr_schedule.get_last_lr()[0],
+                      "LR_Pi": pi_lr_schedule.get_last_lr()[0],
                   })
 
         sample_action = sac.logger.epoch_dict['Pi'][-1][0]
