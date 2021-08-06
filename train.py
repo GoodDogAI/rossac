@@ -280,6 +280,8 @@ if __name__ == '__main__':
     parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
     parser.add_argument('--lr-critic-schedule', default="lambda step: max(5e-6, 0.9998465 ** step) / 5", help='learning rate schedule (Python lambda) for critic network')
     parser.add_argument('--lr-actor-schedule', default="lambda step: max(5e-6, 0.9998465 ** step)", help='learning rate schedule (Python lambda) for actor network')
+    parser.add_argument('--actor-hidden-sizes', type=str, default='512,256,256', help='actor network hidden layer sizes')
+    parser.add_argument('--critic-hidden-sizes', type=str, default='512,256,256', help='critic network hidden layer sizes')
     parser.add_argument('--checkpoint-path', type=str, default='checkpoint/sac.tar', help='path to save/load checkpoint from')
     opt = parser.parse_args()
 
@@ -319,7 +321,15 @@ if __name__ == '__main__':
     replay_buffer_factory = ReplayBuffer
     if opt.gpu_replay_buffer:
         replay_buffer_factory = lambda obs_dim, act_dim, size: TorchReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, size=size, device=device)
+
+    actor_hidden_sizes = eval('[' + opt.actor_hidden_sizes + ']')
+    critic_hidden_sizes = eval('[' + opt.critic_hidden_sizes + ']')
+    actor_critic_args = {
+        'actor_hidden_sizes': actor_hidden_sizes,
+        'critic_hidden_sizes': critic_hidden_sizes,
+    }
     sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=opt.dropout,
+                          ac_kwargs=actor_critic_args,
                           replay_buffer_factory=replay_buffer_factory)
 
     env = env_fn()
@@ -411,6 +421,8 @@ if __name__ == '__main__':
     wandb.config.backbone_slice = backbone_slice
     wandb.config.lr_critic_schedule = opt.lr_critic_schedule
     wandb.config.lr_actor_schedule = opt.lr_actor_schedule
+    wandb.config.actor_hidden_sizes = opt.actor_hidden_sizes
+    wandb.config.critic_hidden_sizes = opt.critic_hidden_sizes
     if resume_dict is None:
         wandb.config.seed = opt.seed
 
