@@ -465,7 +465,10 @@ if __name__ == '__main__':
 
             wandb.log(step=i, data={
                         "action_sample_stdevs": np.mean(np.std(action_samples, axis=0)),
-                        "logstds_avg": np.mean(logstd_samples)
+                        "logstds_avg": np.mean(logstd_samples),
+                        "pi_grad_l2": max(np.linalg.norm(p.grad.cpu()) for p in sac.ac.pi.parameters()),
+                        "q1_grad_l2": max(np.linalg.norm(p.grad.cpu()) for p in sac.ac.q1.parameters()),
+                        "q2_grad_l2": max(np.linalg.norm(p.grad.cpu()) for p in sac.ac.q2.parameters()),
                       })
 
             print()

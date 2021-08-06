@@ -181,7 +181,7 @@ class SoftActorCritic:
         self._freeze_target()
 
         # List of parameters for both Q-networks (save this for convenience)
-        self.q_params = itertools.chain(self.ac.q1.parameters(), self.ac.q2.parameters())
+        self.q_params = [*self.ac.q1.parameters(), *self.ac.q2.parameters()]
 
         # Experience buffer
         self.replay_buffer = replay_buffer_factory(obs_dim=obs_dim, act_dim=act_dim, size=replay_size)
