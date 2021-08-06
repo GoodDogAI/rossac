@@ -278,6 +278,8 @@ if __name__ == '__main__':
     parser.add_argument('--epoch-steps', type=int, default=100, help='how often to save checkpoints')
     parser.add_argument('--seed', type=int, default=None, help='training seed')
     parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
+    parser.add_argument('--lr-critic-schedule', default="lambda step: max(5e-6, 0.9998465 ** step) / 5", help='learning rate schedule (Python lambda) for critic network')
+    parser.add_argument('--lr-actor-schedule', default="lambda step: max(5e-6, 0.9998465 ** step)", help='learning rate schedule (Python lambda) for actor network')
     parser.add_argument('--checkpoint-path', type=str, default='checkpoint/sac.tar', help='path to save/load checkpoint from')
     opt = parser.parse_args()
 
@@ -407,6 +409,8 @@ if __name__ == '__main__':
     wandb.config.device = str(device)
     wandb.config.reward_delay_ms = opt.reward_delay_ms
     wandb.config.backbone_slice = backbone_slice
+    wandb.config.lr_critic_schedule = opt.lr_critic_schedule
+    wandb.config.lr_actor_schedule = opt.lr_actor_schedule
     if resume_dict is None:
         wandb.config.seed = opt.seed
 
@@ -425,14 +429,14 @@ if __name__ == '__main__':
     i = resume_dict['step']+1 if resume_dict is not None else 0
     batches_per_step = 32
 
-    def lr_scheduler(optim):
+    def lr_scheduler(optim, lambda_code):
         return torch.optim.lr_scheduler.LambdaLR(
-            sac.q_optimizer,
+            optim,
             # exponential decay; reduces lr by 100x every 30k steps
-            lr_lambda=lambda step: max(1e-6, 0.9998465 ** step),
+            lr_lambda=eval(lambda_code),
             last_epoch=i-1)
-    pi_lr_schedule = lr_scheduler(sac.pi_optimizer)
-    q_lr_schedule = lr_scheduler(sac.q_optimizer)
+    pi_lr_schedule = lr_scheduler(sac.pi_optimizer, opt.lr_actor_schedule)
+    q_lr_schedule = lr_scheduler(sac.q_optimizer, opt.lr_critic_schedule)
 
     while True:
         pi_lr_schedule.step()
