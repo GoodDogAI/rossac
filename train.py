@@ -102,35 +102,6 @@ def _flatten(arr):
     return np.reshape(arr, -1)
 
 
-@dataclass
-class BagEntries:
-    # yolo_intermediate layers, as the base prediction
-    yolo_intermediate: Dict[int, np.ndarray] = field(default_factory=dict)
-    reward: Dict[int, float] = field(default_factory=dict)
-
-    # pan, tilt in steps, (1024 steps = 300 degrees)
-    dynamixel_cur_state: Dict[int, np.ndarray] = field(default_factory=dict)
-    dynamixel_command_state: Dict[int, np.ndarray] = field(default_factory=dict)
-
-    # commanded forward speed, rotational speed
-    cmd_vel: Dict[int, np.ndarray] = field(default_factory=dict)
-
-    # Each wheels actual speed in rotations per second
-    odrive_feedback: Dict[int, np.ndarray] = field(default_factory=dict)
-
-    # head gyro rate, in radians per second
-    head_gyro: Dict[int, np.ndarray] = field(default_factory=dict)
-
-    # head acceleration, in meters per second
-    head_accel: Dict[int, np.ndarray] = field(default_factory=dict)
-
-    # robot bus voltage, in Volts
-    vbus: Dict[int, np.ndarray] = field(default_factory=dict)
-
-    # indicates reward from stop button (0 = unpressed, -1 = pressed)
-    punishment: Dict[int, np.ndarray] = field(default_factory=dict)
-
-
 DATAFRAME_COLUMNS = [
     # The first entry is the one that we will interpolate over
     "yolo_intermediate",
