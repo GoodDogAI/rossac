@@ -397,7 +397,7 @@ if __name__ == '__main__':
     if resume_dict and num_samples > wandb.config.num_samples:
         print(f'run upgraded from {wandb.config.num_samples} to {num_samples}, but wandb will not have that information')
     else:
-    wandb.config.num_samples = num_samples
+        wandb.config.num_samples = num_samples
     wandb.config.batch_size = opt.batch_size
     wandb.config.gamma = sac.gamma
     wandb.config.polyak = sac.polyak
@@ -424,7 +424,20 @@ if __name__ == '__main__':
 
     i = resume_dict['step']+1 if resume_dict is not None else 0
     batches_per_step = 32
+
+    def lr_scheduler(optim):
+        return torch.optim.lr_scheduler.LambdaLR(
+            sac.q_optimizer,
+            # exponential decay; reduces lr by 100x every 30k steps
+            lr_lambda=lambda step: max(1e-6, 0.9998465 ** step),
+            last_epoch=i-1)
+    pi_lr_schedule = lr_scheduler(sac.pi_optimizer)
+    q_lr_schedule = lr_scheduler(sac.q_optimizer)
+
     while True:
+        pi_lr_schedule.step()
+        q_lr_schedule.step()
+
         sac.train(batch_size=opt.batch_size, batch_count=batches_per_step)
         lossQ = sum(sac.logger.epoch_dict['LossQ'][-batches_per_step:])/batches_per_step
         lossPi = sum(sac.logger.epoch_dict['LossPi'][-batches_per_step:])/batches_per_step
