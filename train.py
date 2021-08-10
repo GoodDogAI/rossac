@@ -306,8 +306,8 @@ if __name__ == '__main__':
     if opt.gpu_replay_buffer:
         replay_buffer_factory = lambda obs_dim, act_dim, size: TorchReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, size=size, device=device)
 
-    actor_hidden_sizes = eval('[' + opt.actor_hidden_sizes + ']')
-    critic_hidden_sizes = eval('[' + opt.critic_hidden_sizes + ']')
+    actor_hidden_sizes = [int(s) for s in opt.actor_hidden_sizes.split(',')]
+    critic_hidden_sizes =[int(s) for s in opt.critic_hidden_sizes.split(',')]
     actor_critic_args = {
         'actor_hidden_sizes': actor_hidden_sizes,
         'critic_hidden_sizes': critic_hidden_sizes,
