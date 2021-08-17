@@ -74,6 +74,52 @@ class TorchReplayBuffer:
                      done=self.done_buf[idxs])
         return batch
 
+
+class TorchLSTMReplayBuffer:
+    def __init__(self, obs_dim, act_dim, size, lstm_history_size=200, device=None):
+        self.device = device
+        self.lstm_history_size = lstm_history_size
+        self.obs_buf = torch.zeros(core.combined_shape(size, obs_dim), device=device, dtype=torch.float32)
+        self.obs2_buf = torch.zeros(core.combined_shape(size, obs_dim), device=device, dtype=torch.float32)
+        self.act_buf = torch.zeros(core.combined_shape(size, act_dim), device=device, dtype=torch.float32)
+        self.rew_buf = torch.zeros(size, device=device, dtype=torch.float32)
+        self.done_buf = torch.zeros(size, device=device, dtype=torch.float32)
+        self.lstm_history_indexes = torch.zeros(core.combined_shape(size, lstm_history_size), device=device, dtype=torch.int64)
+        self.lstm_history_lens = torch.zeros(size, device="cpu", dtype=torch.int64)
+        self.ptr, self.size, self.max_size = 0, 0, size
+
+    def store(self, obs, act, rew, next_obs, lstm_history, done):
+        with torch.no_grad():
+            # replace random entry when full
+            if self.size == self.max_size:
+                raise RuntimeError("In LSTM Mode, you can't exceed the size of your replay buffer")
+
+            self.obs_buf[self.ptr] = torch.as_tensor(obs, device=self.device)
+            self.obs2_buf[self.ptr] = torch.as_tensor(next_obs, device=self.device)
+            self.act_buf[self.ptr] = torch.as_tensor(act, device=self.device)
+            self.rew_buf[self.ptr] = torch.as_tensor(rew, device=self.device)
+            self.done_buf[self.ptr] = torch.as_tensor(done, device=self.device)
+            self.lstm_history_indexes[self.ptr] = torch.nn.functional.pad(torch.as_tensor(lstm_history, device=self.device),
+                                                                          pad=(0, self.lstm_history_size - len(lstm_history)),
+                                                                          value=-1)
+            assert len(lstm_history) <= self.lstm_history_size
+            self.lstm_history_lens[self.ptr] = len(lstm_history)
+            self.ptr += 1
+            self.size = min(self.size + 1, self.max_size)
+
+    def sample_batch(self, batch_size=32):
+        idxs = torch.randint(0, self.size, (batch_size,), dtype=torch.int64, device=self.device)
+        batch = dict(obs=self.obs_buf[idxs],
+                     obs2=self.obs2_buf[idxs],
+                     act=self.act_buf[idxs],
+                     rew=self.rew_buf[idxs],
+                     lstm_history=torch.nn.utils.rnn.pack_padded_sequence(self.obs_buf[self.lstm_history_indexes[idxs]],
+                                                                          lengths=self.lstm_history_lens[idxs],
+                                                                          batch_first=True,
+                                                                          enforce_sorted=False),
+                     done=self.done_buf[idxs])
+        return batch
+
 class SoftActorCritic:
     def __init__(self, env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(),
             replay_size=int(1e6), gamma=0.99,
