@@ -28,6 +28,7 @@ from bot_env import RobotEnvironment, NormalizedRobotEnvironment
 from actor_critic.core import MLPActorCritic
 from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic
 import yolo_reward
+from split_dropout import SplitDropout
 from yolo_reward import get_prediction, get_intermediate_layer
 from dump_onnx import export
 
@@ -312,9 +313,6 @@ if __name__ == '__main__':
         'actor_hidden_sizes': actor_hidden_sizes,
         'critic_hidden_sizes': critic_hidden_sizes,
     }
-    sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=opt.dropout,
-                          ac_kwargs=actor_critic_args,
-                          replay_buffer_factory=replay_buffer_factory)
 
     env = env_fn()
 
@@ -329,6 +327,15 @@ if __name__ == '__main__':
                                interpolated_entry.odrive_feedback[0:2],  # Only the actual vel, not the commanded vel
                                interpolated_entry.vbus - 27.0,  # Volts different from ~50% charge
                                interpolated_entry.yolo_intermediate[::backbone_slice]])
+
+    example_entry = all_entries.iloc[0]
+    backbone_data_size = example_entry.yolo_intermediate[::backbone_slice].shape[0]
+    example_observation = make_observation(example_entry)
+    dropout = SplitDropout([example_observation.shape[0]-backbone_data_size, backbone_data_size],
+                           [0.05, opt.dropout])
+    sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=dropout,
+                          ac_kwargs=actor_critic_args,
+                          replay_buffer_factory=replay_buffer_factory)
 
     num_samples = min(len(all_entries)-1, opt.max_samples)
 
