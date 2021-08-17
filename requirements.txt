@@ -2,6 +2,9 @@ numpy
 torch
 dataclasses
 
+# For a consistent RL environment
+gym
+
 # For reading ros bags
 --extra-index-url https://rospypi.github.io/simple/
 rospy
