@@ -307,7 +307,6 @@ if __name__ == '__main__':
     if opt.gpu_replay_buffer:
         if opt.lstm_history:
             replay_buffer_factory = lambda obs_dim, act_dim, size: TorchLSTMReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
-                                                                                         lstm_history_size=opt.lstm_history,
                                                                                          size=size, device=device)
         else:
             replay_buffer_factory = lambda obs_dim, act_dim, size: TorchReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
@@ -343,7 +342,7 @@ if __name__ == '__main__':
     oobs = 0
     dones = 0
     last_terminated = False
-    lstm_history = []
+    lstm_history_count = 0
     last_ts = None
 
     for i in tqdm(range(num_samples)):
@@ -351,9 +350,9 @@ if __name__ == '__main__':
         next_entry = all_entries.iloc[i+1]
 
         if last_ts is None or abs(entry.name - last_ts) > 1e9:
-            lstm_history = []
-        elif len(lstm_history) >= opt.lstm_history:
-            lstm_history.pop(0)
+            lstm_history_count = 0
+        elif lstm_history_count >= opt.lstm_history:
+            lstm_history_count -= 1
 
         pan_command, tilt_command = normalize_pantilt(entry.dynamixel_command_state)
         pan_curr, tilt_curr = normalize_pantilt(entry.dynamixel_cur_state)
@@ -368,7 +367,7 @@ if __name__ == '__main__':
 
         obs = make_observation(entry)
         future_obs = make_observation(next_entry)
-        lstm_history.append(i)
+        lstm_history_count += 1
 
         if np.isnan(obs).any() or np.isnan(future_obs).any() or np.isnan(reward).any():
             nans += 1
@@ -389,7 +388,7 @@ if __name__ == '__main__':
             act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
             rew=reward,
             next_obs=future_obs,
-            lstm_history=lstm_history,
+            lstm_history_count=lstm_history_count,
             done=terminated)
 
         last_ts = entry.name

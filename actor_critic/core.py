@@ -44,11 +44,16 @@ class SquashedGaussianMLPActor(nn.Module):
         self.with_logprob = with_logprob
         self.with_stddev = False
 
-    def forward(self, obs, lstm_history=None):
+    def forward(self, obs_history, extra_obs=None):
         if self.with_logprob and self.with_stddev:
             raise NotImplementedError
 
-        lstm_out, (lstm_hidden, lstm_cell) = self.lstm(lstm_history)
+        lstm_out, (lstm_hidden, lstm_cell) = self.lstm(obs_history)
+
+        if extra_obs is not None:
+            # Run one more cycle of the LSTM on that final new observation
+            lstm_out, (lstm_hidden, lstm_cell) = self.lstm(extra_obs.unsqueeze(1), (lstm_hidden, lstm_cell))
+
         net_out = self.net(lstm_hidden[0])
 
         mu = self.mu_layer(net_out)
@@ -96,11 +101,22 @@ class MLPQFunction(nn.Module):
 
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
+        self.lstm = nn.LSTM(input_size=obs_dim,
+                            hidden_size=obs_dim, # Keeps it the same, so you can pass it right back into self.net
+                            batch_first=True)
         self.q = mlp([obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
 
-    def forward(self, obs, act):
-        q = self.q(torch.cat([obs, act], dim=-1))
+    def forward(self, obs_history, act, extra_obs=None):
+        # Note: we pass in a history of observations, but not a history of actions at this point
+        lstm_out, (lstm_hidden, lstm_cell) = self.lstm(obs_history)
+
+        if extra_obs is not None:
+            # Run one more cycle of the LSTM on that final new observation
+            lstm_out, (lstm_hidden, lstm_cell) = self.lstm(extra_obs.unsqueeze(1), (lstm_hidden, lstm_cell))
+
+        q = self.q(torch.cat([lstm_hidden[0], act], dim=-1))
         return torch.squeeze(q, -1) # Critical to ensure q has right shape.
+
 
 class MLPActorCritic(nn.Module):
 

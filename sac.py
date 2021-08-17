@@ -42,6 +42,7 @@ class ReplayBuffer:
                      done=self.done_buf[idxs])
         return {k: torch.as_tensor(v, dtype=torch.float32) for k, v in batch.items()}
 
+
 class TorchReplayBuffer:
     def __init__(self, obs_dim, act_dim, size, device=None):
         self.device = device
@@ -76,19 +77,17 @@ class TorchReplayBuffer:
 
 
 class TorchLSTMReplayBuffer:
-    def __init__(self, obs_dim, act_dim, size, lstm_history_size=200, device=None):
+    def __init__(self, obs_dim, act_dim, size, device=None):
         self.device = device
-        self.lstm_history_size = lstm_history_size
         self.obs_buf = torch.zeros(core.combined_shape(size, obs_dim), device=device, dtype=torch.float32)
         self.obs2_buf = torch.zeros(core.combined_shape(size, obs_dim), device=device, dtype=torch.float32)
         self.act_buf = torch.zeros(core.combined_shape(size, act_dim), device=device, dtype=torch.float32)
         self.rew_buf = torch.zeros(size, device=device, dtype=torch.float32)
         self.done_buf = torch.zeros(size, device=device, dtype=torch.float32)
-        self.lstm_history_indexes = torch.zeros(core.combined_shape(size, lstm_history_size), device=device, dtype=torch.int64)
         self.lstm_history_lens = torch.zeros(size, device="cpu", dtype=torch.int64)
         self.ptr, self.size, self.max_size = 0, 0, size
 
-    def store(self, obs, act, rew, next_obs, lstm_history, done):
+    def store(self, obs, act, rew, next_obs, lstm_history_count, done):
         with torch.no_grad():
             # replace random entry when full
             if self.size == self.max_size:
@@ -99,21 +98,22 @@ class TorchLSTMReplayBuffer:
             self.act_buf[self.ptr] = torch.as_tensor(act, device=self.device)
             self.rew_buf[self.ptr] = torch.as_tensor(rew, device=self.device)
             self.done_buf[self.ptr] = torch.as_tensor(done, device=self.device)
-            self.lstm_history_indexes[self.ptr] = torch.nn.functional.pad(torch.as_tensor(lstm_history, device=self.device),
-                                                                          pad=(0, self.lstm_history_size - len(lstm_history)),
-                                                                          value=-1)
-            assert len(lstm_history) <= self.lstm_history_size
-            self.lstm_history_lens[self.ptr] = len(lstm_history)
+
+            self.lstm_history_lens[self.ptr] = lstm_history_count
             self.ptr += 1
             self.size = min(self.size + 1, self.max_size)
 
     def sample_batch(self, batch_size=32):
         idxs = torch.randint(0, self.size, (batch_size,), dtype=torch.int64, device=self.device)
+        lstm_indexes = torch.arange(0, torch.max(self.lstm_history_lens[idxs]), dtype=torch.int64)
+        lstm_indexes = lstm_indexes.repeat(batch_size, 1)
+        lstm_indexes = lstm_indexes + (idxs.cpu() - self.lstm_history_lens[idxs] + 1).unsqueeze(-1)
+
         batch = dict(obs=self.obs_buf[idxs],
                      obs2=self.obs2_buf[idxs],
                      act=self.act_buf[idxs],
                      rew=self.rew_buf[idxs],
-                     lstm_history=torch.nn.utils.rnn.pack_padded_sequence(self.obs_buf[self.lstm_history_indexes[idxs]],
+                     lstm_history=torch.nn.utils.rnn.pack_padded_sequence(self.obs_buf[lstm_indexes],
                                                                           lengths=self.lstm_history_lens[idxs],
                                                                           batch_first=True,
                                                                           enforce_sorted=False),
@@ -250,17 +250,17 @@ class SoftActorCritic:
     def compute_loss_q(self, data):
         o, a, r, o2, d, l = data['obs'], data['act'], data['rew'], data['obs2'], data['done'], data['lstm_history']
 
-        q1 = self.ac.q1(o, a)
-        q2 = self.ac.q2(o, a)
+        q1 = self.ac.q1(l, a)
+        q2 = self.ac.q2(l, a)
 
         # Bellman backup for Q functions
         with torch.no_grad():
             # Target actions come from *current* policy
-            a2, logp_a2 = self.ac.pi(o2, l)
+            a2, logp_a2 = self.ac.pi(l, o2)
 
             # Target Q-values
-            q1_pi_targ = self.ac_targ.q1(o2, a2)
-            q2_pi_targ = self.ac_targ.q2(o2, a2)
+            q1_pi_targ = self.ac_targ.q1(l, a2, o2)
+            q2_pi_targ = self.ac_targ.q2(l, a2, o2)
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
             backup = r + self.gamma * (1 - d) * (q_pi_targ - self.alpha * logp_a2)
 
@@ -277,12 +277,11 @@ class SoftActorCritic:
 
     # Set up function for computing SAC pi loss
     def compute_loss_pi(self, data):
-        o = data['obs']
         l = data['lstm_history']
 
-        pi, logp_pi = self.ac.pi(o, l)
-        q1_pi = self.ac.q1(o, pi)
-        q2_pi = self.ac.q2(o, pi)
+        pi, logp_pi = self.ac.pi(l)
+        q1_pi = self.ac.q1(l, pi)
+        q2_pi = self.ac.q2(l, pi)
         q_pi = torch.min(q1_pi, q2_pi)
 
         # Entropy-regularized policy loss
@@ -375,7 +374,7 @@ class SoftActorCritic:
         det = self.ac.pi.deterministic
         try:
             self.ac.pi.deterministic = True
-            return self.ac.pi(o, l)
+            return self.ac.pi(l)
         finally:
             self.ac.pi.deterministic = det
 
