@@ -248,7 +248,7 @@ class SoftActorCritic:
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(self, data):
-        o, a, r, o2, d = data['obs'], data['act'], data['rew'], data['obs2'], data['done']
+        o, a, r, o2, d, l = data['obs'], data['act'], data['rew'], data['obs2'], data['done'], data['lstm_history']
 
         q1 = self.ac.q1(o, a)
         q2 = self.ac.q2(o, a)
@@ -256,7 +256,7 @@ class SoftActorCritic:
         # Bellman backup for Q functions
         with torch.no_grad():
             # Target actions come from *current* policy
-            a2, logp_a2 = self.ac.pi(o2)
+            a2, logp_a2 = self.ac.pi(o2, l)
 
             # Target Q-values
             q1_pi_targ = self.ac_targ.q1(o2, a2)
@@ -278,7 +278,9 @@ class SoftActorCritic:
     # Set up function for computing SAC pi loss
     def compute_loss_pi(self, data):
         o = data['obs']
-        pi, logp_pi = self.ac.pi(o)
+        l = data['lstm_history']
+
+        pi, logp_pi = self.ac.pi(o, l)
         q1_pi = self.ac.q1(o, pi)
         q2_pi = self.ac.q2(o, pi)
         q_pi = torch.min(q1_pi, q2_pi)
@@ -369,10 +371,11 @@ class SoftActorCritic:
     def sample_actions(self, batch_size):
         batch = self.replay_buffer.sample_batch(batch_size)
         o = batch['obs'].to(device=self.device)
+        l = batch['lstm_history'].to(device=self.device)
         det = self.ac.pi.deterministic
         try:
             self.ac.pi.deterministic = True
-            return self.ac.pi(o)
+            return self.ac.pi(o, l)
         finally:
             self.ac.pi.deterministic = det
 

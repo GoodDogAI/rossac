@@ -35,17 +35,22 @@ class SquashedGaussianMLPActor(nn.Module):
         self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
+        self.lstm = nn.LSTM(input_size=obs_dim,
+                            hidden_size=obs_dim, # Keeps it the same, so you can pass it right back into self.net
+                            batch_first=True)
         self.act_space = act_space
 
         self.deterministic = deterministic
         self.with_logprob = with_logprob
         self.with_stddev = False
 
-    def forward(self, obs):
+    def forward(self, obs, lstm_history=None):
         if self.with_logprob and self.with_stddev:
             raise NotImplementedError
 
-        net_out = self.net(obs)
+        lstm_out, (lstm_hidden, lstm_cell) = self.lstm(lstm_history)
+        net_out = self.net(lstm_hidden[0])
+
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
         log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
