@@ -332,52 +332,87 @@ if __name__ == '__main__':
 
     num_samples = min(len(all_entries)-1, opt.max_samples)
 
+    used = [False for _ in range(num_samples + 1)]
+
     nans = 0
     oobs = 0
     dones = 0
-    last_terminated = False
-    for i in tqdm(range(num_samples)):
-        entry = all_entries.iloc[i]
-        next_entry = all_entries.iloc[i+1]
 
-        pan_command, tilt_command = normalize_pantilt(entry.dynamixel_command_state)
-        pan_curr, tilt_curr = normalize_pantilt(entry.dynamixel_cur_state)
+    def ts_from_seconds(seconds):
+        return int(seconds * 1000000000)
 
-        move_penalty = abs(entry.cmd_vel).mean() * 0.002
-        pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.001)
-        if move_penalty + pantilt_penalty > 10:
-            print("WARNING: high move penalty!")
-        reward = entry.reward
-        reward -= move_penalty + pantilt_penalty
-        reward += next_entry.punishment * DEFAULT_PUNISHMENT_MULTIPLIER
+    MIN_TS_DIFF = ts_from_seconds(0.47)
+    MAX_TS_DIFF = ts_from_seconds(0.75)
 
-        obs = make_observation(entry)
-        future_obs = make_observation(next_entry)
+    t = tqdm(total=num_samples)
+    loaded = 0
 
-        if np.isnan(obs).any() or np.isnan(future_obs).any() or np.isnan(reward).any():
-            nans += 1
-            continue
+    threads = 0
+    while not all(used[:-1]):
+        threads += 1
+        last_terminated = False
+        last_ts = None
+        i = 0
+        while i < num_samples:
+            if used[i]:
+                i += 1
+                continue
 
-        if obs.max() > 1000 or future_obs.max() > 1000:
-            oobs += 1
-            continue
+            used[i] = True
+            loaded += 1
+            t.update()
 
-        terminated = next_entry.punishment < -0.0
-        if terminated and last_terminated:
-            continue
-        last_terminated = terminated
-        if terminated:
-            dones += 1
+            entry = all_entries.iloc[i]
+            ts = entry.name
+            i += 1
+            while i < len(all_entries) and (all_entries.iloc[i].name < ts + MIN_TS_DIFF or used[i]):
+                i += 1
+            if i >= len(all_entries):
+                continue
+            next_entry = all_entries.iloc[i]
+            if next_entry.name >= ts + MAX_TS_DIFF:
+                continue
 
-        sac.replay_buffer.store(obs=obs,
-            act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
-            rew=reward,
-            next_obs=future_obs,
-            done=terminated)
+            pan_command, tilt_command = normalize_pantilt(entry.dynamixel_command_state)
+            pan_curr, tilt_curr = normalize_pantilt(entry.dynamixel_cur_state)
+
+            move_penalty = abs(entry.cmd_vel).mean() * 0.002
+            pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.001)
+            if move_penalty + pantilt_penalty > 10:
+                print("WARNING: high move penalty!")
+            reward = entry.reward
+            reward -= move_penalty + pantilt_penalty
+            reward += next_entry.punishment * DEFAULT_PUNISHMENT_MULTIPLIER
+
+            obs = make_observation(entry)
+            future_obs = make_observation(next_entry)
+
+            if np.isnan(obs).any() or np.isnan(future_obs).any() or np.isnan(reward).any():
+                nans += 1
+                continue
+
+            if obs.max() > 1000 or future_obs.max() > 1000:
+                oobs += 1
+                continue
+
+            terminated = next_entry.punishment < -0.0
+            if terminated and last_terminated:
+                continue
+            last_terminated = terminated
+            if terminated:
+                dones += 1
+
+            sac.replay_buffer.store(obs=obs,
+                act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
+                rew=reward,
+                next_obs=future_obs,
+                done=terminated)
+
+    t.close()
 
     print("filled in replay buffer")
     print(f"Took {time.perf_counter() - start_load}")
-    print(f"NaNs in {nans} of {num_samples} samples, large obs in {oobs}")
+    print(f"NaNs in {nans} of {num_samples} samples, large obs in {oobs}, threads: {threads}")
     print(f"avg. episode len: {(num_samples + 1) / (dones + 1)}")
 
     resume_dict = sac.load(opt.checkpoint_path) if os.path.exists(opt.checkpoint_path) else None
