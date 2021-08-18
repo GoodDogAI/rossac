@@ -502,7 +502,9 @@ if __name__ == '__main__':
                 print(logstd_samples, file=samples_file)
 
         if i > 0 and epoch_ends:
-            export(sac.ac, device, checkpoint_name + '.onnx', sac.env)
+            #export(sac.ac, device, checkpoint_name + '.onnx', sac.env)
+            print("Not exporting ONNX yet, still TODO...")
+
             sac.save(opt.checkpoint_path,
                      run_name=wandb.run.name,
                      run_id=wandb.run.id,
