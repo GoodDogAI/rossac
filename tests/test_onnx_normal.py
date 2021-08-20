@@ -9,7 +9,7 @@ from hypothesis import given, strategies as st
 
 
 class TestONNXNormalDistribution(unittest.TestCase):
-    @given(st.floats(min_value=-1e9, max_value=1e9), st.floats(min_value=0, max_value=5))
+    @given(st.floats(min_value=-1e9, max_value=1e9), st.floats(min_value=0.1, max_value=5))
     def test_sampling(self, mean, stddev):
         orig = Normal(loc=torch.Tensor([mean]), scale=torch.Tensor([stddev]))
         onnx = ONNXNormal(loc=torch.Tensor([mean]), scale=torch.Tensor([stddev]))
@@ -23,11 +23,12 @@ class TestONNXNormalDistribution(unittest.TestCase):
         self.assertLessEqual(abs(np.std(orig_sample.numpy()) - stddev), abs(mean) * 0.1 + 0.1)
         self.assertLessEqual(abs(np.std(onnx_sample.numpy()) - stddev), abs(mean) * 0.1 + 0.1)
 
-    @given(st.floats(), st.floats(), st.floats())
+    @given(st.floats(min_value=0.1), st.floats(min_value=0.1), st.floats(allow_nan=False, allow_infinity=False))
     def test_logprob(self, mean, stddev, value):
         orig = Normal(loc=torch.Tensor([mean]), scale=torch.Tensor([stddev]))
         onnx = ONNXNormal(loc=torch.Tensor([mean]), scale=torch.Tensor([stddev]))
 
-        np.testing.assert_almost_equal(orig.log_prob(value), onnx.log_prob(value))
+        np.testing.assert_almost_equal(orig.log_prob(torch.Tensor([value])),
+                                       onnx.log_prob(torch.Tensor([value])))
 
 
