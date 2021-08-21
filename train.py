@@ -22,21 +22,18 @@ import pyarrow as pa
 import torch
 import onnxruntime as rt
 
+from bag_utils import read_bag
 from bot_env import RobotEnvironment, NormalizedRobotEnvironment
 from actor_critic.core import MLPActorCritic
 from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic, TorchLSTMReplayBuffer
 import yolo_reward
-from yolo_reward import get_prediction, get_intermediate_layer
+
 from dump_onnx import export
 
 DEFAULT_MAX_GAP_SECONDS = 5
 
 DEFAULT_PUNISHMENT_MULTIPLIER = 16
 
-@functools.lru_cache()
-def get_onnx_sess(onnx_path: str) -> rt.InferenceSession:
-    print("Starting ONNX inference session")
-    return rt.InferenceSession(onnx_path)
 
 
 def interpolate(pre_ts, pre_data, ts, post_ts, post_data):
@@ -94,8 +91,6 @@ def interpolate_events(primary, secondaries, max_gap_ns):
 
     return result
 
-def _flatten(arr):
-    return np.reshape(arr, -1)
 
 
 DATAFRAME_COLUMNS = [
@@ -127,7 +122,7 @@ DATAFRAME_COLUMNS = [
 ]
 
 
-def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
+def load_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
             reward_delay_ms: int, punish_backtrack_ms: int) -> pd.DataFrame:
     print(f"Opening {bag_file}")
     bag_cache_name = os.path.join(opt.cache_dir, f"{os.path.basename(bag_file)}_{reward_func_name}_+{reward_delay_ms}ms_-{punish_backtrack_ms}ms.arrow")
@@ -148,81 +143,16 @@ def _read_mmapped_bag(bag_cache_name: str) -> pd.DataFrame:
 
 def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str,
                     reward_delay_ms: int, punish_backtrack_ms: int):
-    bag = rosbag.Bag(bag_file, 'r')
-    entries = defaultdict(dict)
-    reward_func = getattr(yolo_reward, reward_func_name)
 
     # If you are the first bag in a series, don't output any entries until you received one message from each channel
     # This is because it can take some time for everything to fully initialize (ex. if building tensorrt models),
     # and we don't want bogus data points.
     wait_for_each_msg = bag_file.endswith("_0.bag")
-    received_topic = defaultdict(bool)
-    ros_topics = [opt.camera_topic,
-                  '/dynamixel_workbench/dynamixel_state',
-                  '/camera/accel/sample',
-                  '/camera/gyro/sample',
-                  '/head_feedback',
-                  '/cmd_vel',
-                  '/odrive_feedback',
-                  '/reward_button',
-                  '/vbus']
+    entries = read_bag(bag_file, backbone_onnx_path, reward_func_name, reward_delay_ms, punish_backtrack_ms,
+                       wait_for_each_msg)
 
-    for topic, msg, ts in bag.read_messages(ros_topics):
-        full_ts = ts.nsecs + ts.secs * 1000000000
-
-        received_topic[topic] = True
-        if wait_for_each_msg and not all(received_topic[topic] for topic in ros_topics):
-            continue
-
-        if topic == opt.camera_topic:
-            img = []
-            for i in range(0, len(msg.data), msg.step):
-                img.append(np.frombuffer(msg.data[i:i + msg.step], dtype=np.uint8))
-
-            assert "infra" in opt.camera_topic, "Expecting mono infrared images only right now"
-
-            # Convert list of byte arrays to numpy array
-            image_np = np.array(img)
-            pred = get_prediction(get_onnx_sess(backbone_onnx_path), image_np)
-            intermediate = get_intermediate_layer(pred)
-            reward = reward_func(pred)
-
-            if np.isnan(intermediate).any():
-                print(f"Invalid YOLO output in bag: {bag_file} at ts {ts}")
-                img_mode = 'L' if "infra" in opt.camera_topic else 'RGB'
-                png.from_array(img, mode=img_mode).save(os.path.join(opt.cache_dir, f"error_{os.path.basename(bag_file)}_{ts}.png"))
-                continue
-
-            entries["yolo_intermediate"][full_ts] = _flatten(intermediate)
-            entries["reward"][full_ts + reward_delay_ms * 1000000] = reward
-        elif topic == '/reward_button':
-            entries["punishment"][full_ts + punish_backtrack_ms * 1000000] = np.array([msg.data])
-        elif topic == '/dynamixel_workbench/dynamixel_state':
-            entries["dynamixel_cur_state"][full_ts] = np.array([msg.dynamixel_state[0].present_position,
-                                                                msg.dynamixel_state[1].present_position])
-        elif topic == "/head_feedback":
-            entries["dynamixel_command_state"][full_ts] = np.array([msg.pan_command,
-                                                                    msg.tilt_command])
-        elif topic == "/cmd_vel":
-            entries["cmd_vel"][full_ts] = np.array([msg.linear.x,
-                                                    msg.angular.z])
-        elif topic == "/camera/accel/sample":
-            entries["head_accel"][full_ts] = np.array([msg.linear_acceleration.x,
-                                                       msg.linear_acceleration.y,
-                                                       msg.linear_acceleration.z])
-        elif topic == "/camera/gyro/sample":
-            entries["head_gyro"][full_ts] = np.array([msg.angular_velocity.x,
-                                                      msg.angular_velocity.y,
-                                                      msg.angular_velocity.z])
-        elif topic == "/odrive_feedback":
-            entries["odrive_feedback"][full_ts] = np.array([msg.motor_vel_actual_0,
-                                                            msg.motor_vel_actual_1,
-                                                            msg.motor_vel_cmd_0,
-                                                            msg.motor_vel_cmd_1])
-        elif topic == "/vbus":
-            entries["vbus"][full_ts] = np.array([msg.data])
-        else:
-            raise KeyError("Unexpected rosbag topic")
+    # Apply the reward delay and punishement backtracking, by adjusting the timestamps of those events before interpolation
+    # TODO
 
     interpolated = interpolate_events(entries["yolo_intermediate"], [entries[key] for key in DATAFRAME_COLUMNS[1:]],
                                       max_gap_ns=1000 * 1000 * 1000)
@@ -242,7 +172,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--bag-dir', type=str, help='directory with bag files to use for training data')
     parser.add_argument("--onnx", type=str, default='./yolov5s.onnx', help='onnx weights path for intermediate stage')
-    parser.add_argument("--camera_topic", default='/camera/infra2/image_rect_raw')
     parser.add_argument("--reward", default='sum_centered_objects_present')
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
     parser.add_argument('--batch-size', type=int, default=128, help='number of samples per training step')
@@ -286,7 +215,7 @@ if __name__ == '__main__':
     all_entries = None
 
     for bag_path in glob.glob(os.path.join(opt.bag_dir, "*.bag")):
-        entries = read_bag(bag_path, opt.onnx, opt.reward,
+        entries = load_bag(bag_path, opt.onnx, opt.reward,
                            reward_delay_ms=opt.reward_delay_ms,
                            punish_backtrack_ms=opt.punish_backtrack_ms)
 

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import onnxruntime as rt
-import png
+import functools
 
 
 input_binding_name = "images"
@@ -49,6 +49,12 @@ class BBox:
 yolo1 = YoloKernel(input_w // 32, input_h // 32, (116,90,  156,198,  373,326))
 yolo2 = YoloKernel(input_w // 16, input_h // 16, (30,61,  62,45,  59,119))
 yolo3 = YoloKernel(input_w // 8, input_h // 8, (10,13,  16,30,  33,23))
+
+
+@functools.lru_cache()
+def get_onnx_sess(onnx_path: str) -> rt.InferenceSession:
+    print("Starting ONNX inference session")
+    return rt.InferenceSession(onnx_path)
 
 
 def detect_yolo_bboxes(prediction: np.ndarray, kernel: YoloKernel) -> List[BBox]:

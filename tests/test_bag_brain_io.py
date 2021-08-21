@@ -1,13 +1,20 @@
 import rosbag
+import os
 import unittest
 import numpy as np
 import onnxruntime as rt
 
+from bag_utils import read_bag
+
 
 class TestBagBrainIO(unittest.TestCase):
+    test_bag = "/home/jake/bagfiles/test_bags/record-brain-test-lstm-samp0.0_2021-08-20-13-13-06_0.bag"
+    test_onnx = "/home/jake/bagfiles/test_bags/test-lstm.onnx"
+    test_yolo_onnx = os.path.join(os.path.dirname(__file__), "..", "yolov5s.onnx")
+
     def test_lstm_sample(self):
-        bag = rosbag.Bag("/home/jake/bagfiles/test_bags/record-brain-test-lstm-samp0.0_2021-08-20-13-13-06_0.bag", "r")
-        onnx = rt.InferenceSession("/home/jake/bagfiles/test_bags/test-lstm.onnx")
+        bag = rosbag.Bag(self.test_bag, "r")
+        onnx = rt.InferenceSession(self.test_onnx)
         history_size = 8
 
         inputs = []
@@ -37,3 +44,9 @@ class TestBagBrainIO(unittest.TestCase):
 
             print(np.linalg.norm(out - pred))
             np.testing.assert_almost_equal(out, pred, decimal=5)
+
+    def test_observation_vectors(self):
+        entries = read_bag(self.test_bag, self.test_yolo_onnx, "sum_centered_objects_present",
+                           reward_delay_ms=0, punish_backtrack_ms=0, wait_for_each_msg=True)
+
+        print(len(entries))
