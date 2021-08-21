@@ -263,6 +263,7 @@ if __name__ == '__main__':
     parser.add_argument('--epoch-steps', type=int, default=100, help='how often to save checkpoints')
     parser.add_argument('--seed', type=int, default=None, help='training seed')
     parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
+    parser.add_argument('--lr', type=float, default=0.0001, help='learning rate')
     parser.add_argument('--lr-critic-schedule', default="lambda step: max(5e-6, 0.9998465 ** step) / 5", help='learning rate schedule (Python lambda) for critic network')
     parser.add_argument('--lr-actor-schedule', default="lambda step: max(5e-6, 0.9998465 ** step)", help='learning rate schedule (Python lambda) for actor network')
     parser.add_argument('--actor-hidden-sizes', type=str, default='512,256,256', help='actor network hidden layer sizes')
@@ -334,6 +335,7 @@ if __name__ == '__main__':
     dropout = SplitDropout([example_observation.shape[0]-backbone_data_size, backbone_data_size],
                            [0.05, opt.dropout])
     sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=dropout,
+                          lr=opt.lr,
                           ac_kwargs=actor_critic_args,
                           replay_buffer_factory=replay_buffer_factory)
 
