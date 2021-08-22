@@ -1,3 +1,4 @@
+/yolov5s.onnx
 __pycache__/
 checkpoints/
 good_checkpoints/
