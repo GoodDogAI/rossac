@@ -312,11 +312,10 @@ if __name__ == '__main__':
                 continue
             next_entry = all_entries.iloc[i]
             if next_entry.name >= ts + MAX_TS_DIFF:
+                lstm_history_count = 0
                 continue
 
-            if last_ts is None or abs(entry.name - last_ts) > 1e9:
-                lstm_history_count = 0
-            elif lstm_history_count >= opt.lstm_history:
+            if lstm_history_count >= opt.lstm_history:
                 lstm_history_count -= 1
 
             pan_command, tilt_command = normalize_pantilt(entry.dynamixel_command_state)
