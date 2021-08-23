@@ -126,7 +126,7 @@ class SoftActorCritic:
             polyak=0.995, lr=1e-3, alpha=0.2,
             max_ep_len=1000,
             device=None,
-            dropout=0.88,
+            dropout=None,
             grad_clip_pi=0.5,
             grad_clip_q=5.0,
             replay_buffer_factory=ReplayBuffer,
@@ -244,7 +244,7 @@ class SoftActorCritic:
         self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=lr, eps=3e-6)
         self.q_optimizer = Adam(self.q_params, lr=lr, eps=3e-6)
 
-        self.dropout = Dropout(p=dropout)
+        self.dropout = dropout
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(self, data):

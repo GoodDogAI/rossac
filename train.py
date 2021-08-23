@@ -27,7 +27,8 @@ from bot_env import RobotEnvironment, NormalizedRobotEnvironment
 from actor_critic.core import MLPActorCritic
 from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic, TorchLSTMReplayBuffer
 import yolo_reward
-
+from split_dropout import SplitDropout
+from yolo_reward import get_prediction, get_intermediate_layer
 from dump_onnx import export
 
 DEFAULT_MAX_GAP_SECONDS = 5
@@ -143,6 +144,9 @@ def _read_mmapped_bag(bag_cache_name: str) -> pd.DataFrame:
 
 def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str,
                     reward_delay_ms: int, punish_backtrack_ms: int):
+    bag = rosbag.Bag(bag_file, 'r')
+    entries = defaultdict(dict)
+    reward_func = getattr(yolo_reward, reward_func_name)
 
     # If you are the first bag in a series, don't output any entries until you received one message from each channel
     # This is because it can take some time for everything to fully initialize (ex. if building tensorrt models),
@@ -188,7 +192,8 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=None, help='training seed')
     parser.add_argument('--lstm-history', type=int, default=8, help='max amount of prior steps to feed into LSTM')
     parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
-    parser.add_argument('--lr-critic-schedule', default="lambda step: max(5e-6, 0.9998465 ** step) / 5", help='learning rate schedule (Python lambda) for critic network')
+    parser.add_argument('--lr', type=float, default=0.0001, help='learning rate')
+    parser.add_argument('--lr-critic-schedule', default="lambda step: max(5e-6, 0.9998465 ** step)", help='learning rate schedule (Python lambda) for critic network')
     parser.add_argument('--lr-actor-schedule', default="lambda step: max(5e-6, 0.9998465 ** step)", help='learning rate schedule (Python lambda) for actor network')
     parser.add_argument('--actor-hidden-sizes', type=str, default='512,256,256', help='actor network hidden layer sizes')
     parser.add_argument('--critic-hidden-sizes', type=str, default='512,256,256', help='critic network hidden layer sizes')
@@ -243,9 +248,6 @@ if __name__ == '__main__':
         'actor_hidden_sizes': actor_hidden_sizes,
         'critic_hidden_sizes': critic_hidden_sizes,
     }
-    sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=opt.dropout,
-                          ac_kwargs=actor_critic_args,
-                          replay_buffer_factory=replay_buffer_factory)
 
     env = env_fn()
 
@@ -261,67 +263,109 @@ if __name__ == '__main__':
                                interpolated_entry.vbus - 27.0,  # Volts different from ~50% charge
                                interpolated_entry.yolo_intermediate[::backbone_slice]])
 
+    example_entry = all_entries.iloc[0]
+    backbone_data_size = example_entry.yolo_intermediate[::backbone_slice].shape[0]
+    example_observation = make_observation(example_entry)
+    dropout = SplitDropout([example_observation.shape[0]-backbone_data_size, backbone_data_size],
+                           [0.05, opt.dropout])
+    sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=dropout,
+                          lr=opt.lr,
+                          ac_kwargs=actor_critic_args,
+                          replay_buffer_factory=replay_buffer_factory)
+
     num_samples = min(len(all_entries)-1, opt.max_samples)
+
+    used = [False for _ in range(num_samples + 1)]
 
     nans = 0
     oobs = 0
     dones = 0
-    last_terminated = False
-    lstm_history_count = 0
-    last_ts = None
 
-    for i in tqdm(range(num_samples)):
-        entry = all_entries.iloc[i]
-        next_entry = all_entries.iloc[i+1]
+    def ts_from_seconds(seconds):
+        return int(seconds * 1000000000)
 
-        if last_ts is None or abs(entry.name - last_ts) > 1e9:
-            lstm_history_count = 0
-        elif lstm_history_count >= opt.lstm_history:
-            lstm_history_count -= 1
+    MIN_TS_DIFF = ts_from_seconds(0.47)
+    MAX_TS_DIFF = ts_from_seconds(0.75)
 
-        pan_command, tilt_command = normalize_pantilt(entry.dynamixel_command_state)
-        pan_curr, tilt_curr = normalize_pantilt(entry.dynamixel_cur_state)
+    t = tqdm(total=num_samples)
+    loaded = 0
 
-        move_penalty = abs(entry.cmd_vel).mean() * 0.002
-        pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.001)
-        if move_penalty + pantilt_penalty > 10:
-            print("WARNING: high move penalty!")
-        reward = entry.reward
-        reward -= move_penalty + pantilt_penalty
-        reward += next_entry.punishment * DEFAULT_PUNISHMENT_MULTIPLIER
+    threads = 0
+    while not all(used[:-1]):
+        threads += 1
+        last_terminated = False
+        lstm_history_count = 0
+        last_ts = None
+        i = 0
+        while i < num_samples:
+            if used[i]:
+                i += 1
+                continue
 
-        obs = make_observation(entry)
-        future_obs = make_observation(next_entry)
-        lstm_history_count += 1
+            used[i] = True
+            loaded += 1
+            t.update()
 
-        if np.isnan(obs).any() or np.isnan(future_obs).any() or np.isnan(reward).any():
-            nans += 1
-            continue
+            entry = all_entries.iloc[i]
+            ts = entry.name
+            i += 1
+            while i < len(all_entries) and (all_entries.iloc[i].name < ts + MIN_TS_DIFF or used[i]):
+                i += 1
+            if i >= len(all_entries):
+                continue
+            next_entry = all_entries.iloc[i]
+            if next_entry.name >= ts + MAX_TS_DIFF:
+                continue
 
-        if obs.max() > 1000 or future_obs.max() > 1000:
-            oobs += 1
-            continue
+            if last_ts is None or abs(entry.name - last_ts) > 1e9:
+                lstm_history_count = 0
+            elif lstm_history_count >= opt.lstm_history:
+                lstm_history_count -= 1
 
-        terminated = next_entry.punishment < -0.0
-        if terminated and last_terminated:
-            continue
-        last_terminated = terminated
-        if terminated:
-            dones += 1
+            pan_command, tilt_command = normalize_pantilt(entry.dynamixel_command_state)
+            pan_curr, tilt_curr = normalize_pantilt(entry.dynamixel_cur_state)
 
-        sac.replay_buffer.store(obs=obs,
-            act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
-            rew=reward,
-            next_obs=future_obs,
-            lstm_history_count=lstm_history_count,
-            done=terminated)
+            move_penalty = abs(entry.cmd_vel).mean() * 0.002
+            pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.001)
+            if move_penalty + pantilt_penalty > 10:
+                print("WARNING: high move penalty!")
+            reward = entry.reward
+            reward -= move_penalty + pantilt_penalty
+            reward += next_entry.punishment * DEFAULT_PUNISHMENT_MULTIPLIER
 
-        last_ts = entry.name
+            obs = make_observation(entry)
+            future_obs = make_observation(next_entry)
+            lstm_history_count += 1
 
+            if np.isnan(obs).any() or np.isnan(future_obs).any() or np.isnan(reward).any():
+                nans += 1
+                continue
+
+            if obs.max() > 1000 or future_obs.max() > 1000:
+                oobs += 1
+                continue
+
+            terminated = next_entry.punishment < -0.0
+            if terminated and last_terminated:
+                continue
+            last_terminated = terminated
+            if terminated:
+                dones += 1
+
+            sac.replay_buffer.store(obs=obs,
+                act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
+                rew=reward,
+                next_obs=future_obs,
+                lstm_history_count=lstm_history_count,
+                done=terminated)
+
+            last_ts = ts
+
+    t.close()
 
     print("filled in replay buffer")
     print(f"Took {time.perf_counter() - start_load}")
-    print(f"NaNs in {nans} of {num_samples} samples, large obs in {oobs}")
+    print(f"NaNs in {nans} of {num_samples} samples, large obs in {oobs}, threads: {threads}")
     print(f"avg. episode len: {(num_samples + 1) / (dones + 1)}")
 
     resume_dict = sac.load(opt.checkpoint_path) if os.path.exists(opt.checkpoint_path) else None
@@ -432,8 +476,6 @@ if __name__ == '__main__':
 
         if i > 0 and epoch_ends:
             export(sac.ac, device, checkpoint_name + '.onnx', sac.env)
-            print("Not exporting ONNX yet, still TODO...")
-
             sac.save(opt.checkpoint_path,
                      run_name=wandb.run.name,
                      run_id=wandb.run.id,
