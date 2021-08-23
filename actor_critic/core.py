@@ -34,9 +34,6 @@ class SquashedGaussianMLPActor(nn.Module):
         self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
-        self.lstm = nn.LSTM(input_size=obs_dim,
-                            hidden_size=obs_dim, # Keeps it the same, so you can pass it right back into self.net
-                            batch_first=True)
         self.act_space = act_space
 
         self.deterministic = deterministic
@@ -47,13 +44,11 @@ class SquashedGaussianMLPActor(nn.Module):
         if self.with_logprob and self.with_stddev:
             raise NotImplementedError
 
-        lstm_out, (lstm_hidden, lstm_cell) = self.lstm(obs_history)
+        net_out = self.net(obs_history[:, -1, :])
 
+        # You can use the extra_obs in an LSTM situation to process "one more frame" at the end of the usual history
         if extra_obs is not None:
-            # Run one more cycle of the LSTM on that final new observation
-            lstm_out, (lstm_hidden, lstm_cell) = self.lstm(extra_obs.unsqueeze(1), (lstm_hidden, lstm_cell))
-
-        net_out = self.net(lstm_hidden[0])
+            net_out = self.net(obs_history[:, -1, :])
 
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
@@ -100,20 +95,16 @@ class MLPQFunction(nn.Module):
 
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
-        self.lstm = nn.LSTM(input_size=obs_dim,
-                            hidden_size=obs_dim, # Keeps it the same, so you can pass it right back into self.net
-                            batch_first=True)
         self.q = mlp([obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
 
     def forward(self, obs_history, act, extra_obs=None):
         # Note: we pass in a history of observations, but not a history of actions at this point
-        lstm_out, (lstm_hidden, lstm_cell) = self.lstm(obs_history)
+        if extra_obs is None:
+            final_observation = obs_history[:, -1, :]
+        else:
+            final_observation = extra_obs
 
-        if extra_obs is not None:
-            # Run one more cycle of the LSTM on that final new observation
-            lstm_out, (lstm_hidden, lstm_cell) = self.lstm(extra_obs.unsqueeze(1), (lstm_hidden, lstm_cell))
-
-        q = self.q(torch.cat([lstm_hidden[0], act], dim=-1))
+        q = self.q(torch.cat([final_observation, act], dim=-1))
         return torch.squeeze(q, -1) # Critical to ensure q has right shape.
 
 
