@@ -15,7 +15,8 @@ CAMERA_TOPIC = "/camera/infra2/image_rect_raw"
 def _flatten(arr):
     return np.reshape(arr, -1)
 
-
+# TODO Make a separate function to apply the reward delay and punishement backtracking, by adjusting the timestamps
+#  of those events before interpolation
 def read_bag(bag_file: str,
              backbone_onnx_path: str,
              reward_func_name: str,

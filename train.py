@@ -155,9 +155,6 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
     entries = read_bag(bag_file, backbone_onnx_path, reward_func_name, reward_delay_ms, punish_backtrack_ms,
                        wait_for_each_msg)
 
-    # Apply the reward delay and punishement backtracking, by adjusting the timestamps of those events before interpolation
-    # TODO
-
     interpolated = interpolate_events(entries["yolo_intermediate"], [entries[key] for key in DATAFRAME_COLUMNS[1:]],
                                       max_gap_ns=1000 * 1000 * 1000)
 
