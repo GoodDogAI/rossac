@@ -374,9 +374,9 @@ if __name__ == '__main__':
             entry = all_entries.iloc[i]
             ts = entry.name
             i += 1
-            while i < len(all_entries) and (all_entries.iloc[i].name < ts + MIN_TS_DIFF or used[i]):
+            while i < num_samples and (all_entries.iloc[i].name < ts + MIN_TS_DIFF or used[i]):
                 i += 1
-            if i >= len(all_entries):
+            if i >= num_samples:
                 continue
             next_entry = all_entries.iloc[i]
             if next_entry.name >= ts + MAX_TS_DIFF:
