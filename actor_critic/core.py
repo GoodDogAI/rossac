@@ -46,10 +46,11 @@ class SquashedGaussianMLPActor(nn.Module):
 
         # You can use the extra_obs in an LSTM situation to process "one more frame" at the end of the usual history
         if extra_obs is not None:
-            net_out = self.net(extra_obs)
+            final_observation = extra_obs
         else:
-            net_out = self.net(obs_history[:, -1, :])
+            final_observation = obs_history[:, -1, :]
 
+        net_out = self.net(final_observation)
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
         log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)

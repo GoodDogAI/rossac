@@ -1,4 +1,5 @@
 import unittest
+import random
 import numpy as np
 
 from replay_buffer import TorchLSTMReplayBuffer
@@ -54,14 +55,14 @@ class TestBagBrainIO(unittest.TestCase):
             np.testing.assert_almost_equal(batch["obs"][i].numpy(), batch["lstm_history"][i, 0].numpy())
 
     def test_double_history_count(self):
-        replay = TorchLSTMReplayBuffer(obs_dim=2, act_dim=1, size=10, mode="right_aligned")
+        replay = TorchLSTMReplayBuffer(obs_dim=2, act_dim=1, size=100, mode="right_aligned")
 
-        for i in range(10):
+        for i in range(100):
             replay.store(obs=np.random.rand(2),
                          act=np.random.rand(1),
                          rew=float(i),
                          next_obs=np.random.rand(2),
-                         lstm_history_count=min(i + 1, 3),
+                         lstm_history_count=min(i + 1, random.randint(1, 10)),
                          done=False)
 
         batch = replay.sample_batch(100)

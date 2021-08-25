@@ -258,7 +258,6 @@ class SoftActorCritic:
 
     def sample_actions(self, batch_size):
         batch = self.replay_buffer.sample_batch(batch_size)
-        o = batch['obs'].to(device=self.device)
         l = batch['lstm_history'].to(device=self.device)
         det = self.ac.pi.deterministic
         try:
