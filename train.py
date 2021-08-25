@@ -359,8 +359,6 @@ if __name__ == '__main__':
                 lstm_history_count=lstm_history_count,
                 done=terminated)
 
-            last_ts = ts
-
     t.close()
 
     print("filled in replay buffer")
