@@ -23,7 +23,7 @@ import torch
 import onnxruntime as rt
 import tensorflow.compat.v1 as tf
 
-from bag_utils import read_bag
+from bag_utils import read_bag, _flatten
 from bot_env import RobotEnvironment, NormalizedRobotEnvironment
 from actor_critic.core import MLPActorCritic
 from sac import SoftActorCritic
@@ -146,18 +146,86 @@ def _read_mmapped_bag(bag_cache_name: str) -> pd.DataFrame:
 
 def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str,
                     reward_delay_ms: int, punish_backtrack_ms: int):
+    CAMERA_TOPIC = "/camera/infra2/image_rect_raw"
+
     bag = rosbag.Bag(bag_file, 'r')
-    entries = defaultdict(dict)
     reward_func = getattr(yolo_reward, reward_func_name)
 
     # If you are the first bag in a series, don't output any entries until you received one message from each channel
     # This is because it can take some time for everything to fully initialize (ex. if building tensorrt models),
     # and we don't want bogus data points.
     wait_for_each_msg = bag_file.endswith("_0.bag")
-    entries = read_bag(bag_file, backbone_onnx_path, reward_func_name,
-                       reward_delay_ms=reward_delay_ms,
-                       punish_backtrack_ms=punish_backtrack_ms,
-                       wait_for_each_msg=wait_for_each_msg)
+
+    entries = defaultdict(dict)
+    received_topic = defaultdict(bool)
+
+    ros_topics = [CAMERA_TOPIC,
+                  '/dynamixel_workbench/dynamixel_state',
+                  '/camera/accel/sample',
+                  '/camera/gyro/sample',
+                  '/head_feedback',
+                  '/cmd_vel',
+                  '/odrive_feedback',
+                  '/reward_button',
+                  '/vbus']
+
+    for topic, msg, ts in bag.read_messages(ros_topics):
+        full_ts = ts.nsecs + ts.secs * 1000000000
+
+        received_topic[topic] = True
+        if wait_for_each_msg and not all(received_topic[topic] for topic in ros_topics):
+            continue
+
+        if topic == CAMERA_TOPIC:
+            img = []
+            for i in range(0, len(msg.data), msg.step):
+                img.append(np.frombuffer(msg.data[i:i + msg.step], dtype=np.uint8))
+
+            assert "infra" in CAMERA_TOPIC, "Expecting mono infrared images only right now"
+
+            # Convert list of byte arrays to numpy array
+            image_np = np.array(img)
+            pred = get_prediction(yolo_reward.get_onnx_sess(backbone_onnx_path), image_np)
+            intermediate = get_intermediate_layer(pred)
+            reward = reward_func(pred)
+
+            if np.isnan(intermediate).any():
+                print(f"Invalid YOLO output in bag: {bag_file} at ts {ts}")
+                img_mode = 'L' if "infra" in CAMERA_TOPIC else 'RGB'
+                png.from_array(img, mode=img_mode).save(
+                    os.path.join(os.path.dirname(bag_file), f"error_{os.path.basename(bag_file)}_{ts}.png"))
+                continue
+
+            entries["yolo_intermediate"][full_ts] = _flatten(intermediate)
+            entries["reward"][full_ts + reward_delay_ms * 1000000] = reward
+        elif topic == '/reward_button':
+            entries["punishment"][full_ts + punish_backtrack_ms * 1000000] = np.array([msg.data])
+        elif topic == '/dynamixel_workbench/dynamixel_state':
+            entries["dynamixel_cur_state"][full_ts] = np.array([msg.dynamixel_state[0].present_position,
+                                                                msg.dynamixel_state[1].present_position])
+        elif topic == "/head_feedback":
+            entries["dynamixel_command_state"][full_ts] = np.array([msg.pan_command,
+                                                                    msg.tilt_command])
+        elif topic == "/cmd_vel":
+            entries["cmd_vel"][full_ts] = np.array([msg.linear.x,
+                                                    msg.angular.z])
+        elif topic == "/camera/accel/sample":
+            entries["head_accel"][full_ts] = np.array([msg.linear_acceleration.x,
+                                                       msg.linear_acceleration.y,
+                                                       msg.linear_acceleration.z])
+        elif topic == "/camera/gyro/sample":
+            entries["head_gyro"][full_ts] = np.array([msg.angular_velocity.x,
+                                                      msg.angular_velocity.y,
+                                                      msg.angular_velocity.z])
+        elif topic == "/odrive_feedback":
+            entries["odrive_feedback"][full_ts] = np.array([msg.motor_vel_actual_0,
+                                                            msg.motor_vel_actual_1,
+                                                            msg.motor_vel_cmd_0,
+                                                            msg.motor_vel_cmd_1])
+        elif topic == "/vbus":
+            entries["vbus"][full_ts] = np.array([msg.data])
+        else:
+            raise KeyError("Unexpected rosbag topic")
 
     interpolated = interpolate_events(entries["yolo_intermediate"], [entries[key] for key in DATAFRAME_COLUMNS[1:]],
                                       max_gap_ns=1000 * 1000 * 1000)
