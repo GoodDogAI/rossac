@@ -68,9 +68,9 @@ class TestBagBrainIO(unittest.TestCase):
                          lstm_history_count=1,
                          done=False)
 
-        batch = replay.sample_batch(10)
+        batch = replay.sample_batch(100)
 
-        for i in range(10):
+        for i in range(100):
             np.testing.assert_almost_equal(batch["obs"][i].numpy(), batch["lstm_history"][i, 0].numpy())
 
     def test_double_history_count(self):
@@ -79,14 +79,14 @@ class TestBagBrainIO(unittest.TestCase):
         for i in range(10):
             replay.store(obs=np.random.rand(2),
                          act=np.random.rand(1),
-                         rew=0.0,
+                         rew=float(i),
                          next_obs=np.random.rand(2),
-                         lstm_history_count=min(i, 3),
+                         lstm_history_count=min(i + 1, 3),
                          done=False)
 
-        batch = replay.sample_batch(10)
+        batch = replay.sample_batch(100)
 
-        for i in range(10):
+        for i in range(100):
             np.testing.assert_almost_equal(batch["obs"][i].numpy(), batch["lstm_history"][i, -1].numpy())
 
 
