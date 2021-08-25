@@ -110,21 +110,23 @@ class TorchLSTMReplayBuffer:
         lstm_pads = torch.clone(lstm_indexes)
 
         # Data is right aligned if the sequence is shorter than the max, and padded to zeros
-        lstm_indexes = lstm_indexes + (idxs.cpu() + 1 - torch.max(self.lstm_history_lens[idxs])).unsqueeze(-1)
-        lstm_pads = (lstm_pads + torch.unsqueeze(self.lstm_history_lens[idxs] - torch.max(self.lstm_history_lens[idxs]), -1)) < 0
+        # If you want to just access the last N'th element, then you want to right align sequences
+        # lstm_indexes = lstm_indexes + (idxs.cpu() + 1 - torch.max(self.lstm_history_lens[idxs])).unsqueeze(-1)
+        # lstm_pads = (lstm_pads + torch.unsqueeze(self.lstm_history_lens[idxs] - torch.max(self.lstm_history_lens[idxs]), -1)) < 0
+        # lstm_history[lstm_pads] = 0
 
-        # Un comment for Left aligned
-        #lstm_indexes = lstm_indexes + (idxs.cpu() - self.lstm_history_lens[idxs] + 1).unsqueeze(-1)
-        #lstm_pads = ...
-
+        lstm_indexes = lstm_indexes + (idxs.cpu() - self.lstm_history_lens[idxs] + 1).unsqueeze(-1)
         lstm_history = self.obs_buf[lstm_indexes]
-        lstm_history[lstm_pads] = 0
+
+        # Note, that for each row, the first self.lstm_history_lens[idxs] entries are valid, but after that, is garbage
+        # We don't explicitly zero it out for efficiency, it's up to the calling code not to use invalid data
 
         batch = dict(obs=self.obs_buf[idxs],
                      obs2=self.obs2_buf[idxs],
                      act=self.act_buf[idxs],
                      rew=self.rew_buf[idxs],
                      lstm_history=lstm_history,
+                     lstm_lens=self.lstm_history_lens[idxs],
                      done=self.done_buf[idxs])
         return batch
 
