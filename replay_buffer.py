@@ -71,6 +71,7 @@ class TorchReplayBuffer:
 
 class TorchLSTMReplayBuffer:
     def __init__(self, obs_dim, act_dim, size, device=None, mode="right_aligned"):
+        assert mode in ["right_aligned", "padded_seq"]
         self.device = device
         self.mode = mode
         self.obs_buf = torch.zeros(core.combined_shape(size, obs_dim), device=device, dtype=torch.float32)
