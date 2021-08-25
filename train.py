@@ -25,7 +25,8 @@ import onnxruntime as rt
 from bag_utils import read_bag
 from bot_env import RobotEnvironment, NormalizedRobotEnvironment
 from actor_critic.core import MLPActorCritic
-from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic, TorchLSTMReplayBuffer
+from sac import SoftActorCritic
+from replay_buffer import ReplayBuffer, TorchReplayBuffer, TorchLSTMReplayBuffer
 import yolo_reward
 from split_dropout import SplitDropout
 from yolo_reward import get_prediction, get_intermediate_layer

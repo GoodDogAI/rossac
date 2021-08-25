@@ -44,10 +44,10 @@ class SquashedGaussianMLPActor(nn.Module):
         if self.with_logprob and self.with_stddev:
             raise NotImplementedError
 
-        net_out = self.net(obs_history[:, -1, :])
-
         # You can use the extra_obs in an LSTM situation to process "one more frame" at the end of the usual history
         if extra_obs is not None:
+            net_out = self.net(extra_obs)
+        else:
             net_out = self.net(obs_history[:, -1, :])
 
         mu = self.mu_layer(net_out)
@@ -99,10 +99,10 @@ class MLPQFunction(nn.Module):
 
     def forward(self, obs_history, act, extra_obs=None):
         # Note: we pass in a history of observations, but not a history of actions at this point
-        if extra_obs is None:
-            final_observation = obs_history[:, -1, :]
-        else:
+        if extra_obs is not None:
             final_observation = extra_obs
+        else:
+            final_observation = obs_history[:, -1, :]
 
         q = self.q(torch.cat([final_observation, act], dim=-1))
         return torch.squeeze(q, -1) # Critical to ensure q has right shape.
