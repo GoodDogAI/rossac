@@ -5,8 +5,7 @@ import os
 
 import png
 
-from train import get_onnx_sess
-from yolo_reward import get_prediction, get_intermediate_layer
+from yolo_reward import get_prediction, get_intermediate_layer, get_onnx_sess
 from yolo_reward import detect_yolo_bboxes, yolo1, yolo2, yolo3
 
 

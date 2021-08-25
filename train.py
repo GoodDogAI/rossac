@@ -153,8 +153,10 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
     # This is because it can take some time for everything to fully initialize (ex. if building tensorrt models),
     # and we don't want bogus data points.
     wait_for_each_msg = bag_file.endswith("_0.bag")
-    entries = read_bag(bag_file, backbone_onnx_path, reward_func_name, reward_delay_ms, punish_backtrack_ms,
-                       wait_for_each_msg)
+    entries = read_bag(bag_file, backbone_onnx_path, reward_func_name,
+                       reward_delay_ms=reward_delay_ms,
+                       punish_backtrack_ms=punish_backtrack_ms,
+                       wait_for_each_msg=wait_for_each_msg)
 
     interpolated = interpolate_events(entries["yolo_intermediate"], [entries[key] for key in DATAFRAME_COLUMNS[1:]],
                                       max_gap_ns=1000 * 1000 * 1000)

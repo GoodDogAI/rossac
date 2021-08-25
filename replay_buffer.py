@@ -87,6 +87,9 @@ class TorchLSTMReplayBuffer:
             if self.size == self.max_size:
                 raise RuntimeError("In LSTM Mode, you can't exceed the size of your replay buffer")
 
+            if lstm_history_count > self.size + 1:
+                raise RuntimeError("In LSTM Mode, you can't reference entries that are not entered yet")
+
             self.obs_buf[self.ptr] = torch.as_tensor(obs, device=self.device)
             self.obs2_buf[self.ptr] = torch.as_tensor(next_obs, device=self.device)
             self.act_buf[self.ptr] = torch.as_tensor(act, device=self.device)
