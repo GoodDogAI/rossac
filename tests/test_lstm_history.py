@@ -1,10 +1,6 @@
-import rosbag
-import os
 import unittest
 import numpy as np
-import onnxruntime as rt
 
-from bag_utils import read_bag
 from replay_buffer import TorchLSTMReplayBuffer
 
 
@@ -40,22 +36,6 @@ class TestBagBrainIO(unittest.TestCase):
                          next_obs=np.random.rand(2),
                          lstm_history_count=2,
                          done=False)
-
-    def test_single_history_count(self):
-        replay = TorchLSTMReplayBuffer(obs_dim=2, act_dim=1, size=10, mode="right_aligned")
-
-        for i in range(10):
-            replay.store(obs=np.random.rand(2),
-                         act=np.random.rand(1),
-                         rew=0.0,
-                         next_obs=np.random.rand(2),
-                         lstm_history_count=1,
-                         done=False)
-
-        batch = replay.sample_batch(10)
-
-        for i in range(10):
-            np.testing.assert_almost_equal(batch["obs"][i].numpy(), batch["lstm_history"][i, 0].numpy())
 
     def test_single_history_count(self):
         replay = TorchLSTMReplayBuffer(obs_dim=2, act_dim=1, size=10, mode="right_aligned")
