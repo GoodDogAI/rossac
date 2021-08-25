@@ -107,16 +107,24 @@ class TorchLSTMReplayBuffer:
         idxs = torch.randint(0, self.size, (batch_size,), dtype=torch.int64, device=self.device)
         lstm_indexes = torch.arange(0, torch.max(self.lstm_history_lens[idxs]), dtype=torch.int64)
         lstm_indexes = lstm_indexes.repeat(batch_size, 1)
-        lstm_indexes = lstm_indexes + (idxs.cpu() - self.lstm_history_lens[idxs] + 1).unsqueeze(-1)
+        lstm_pads = torch.clone(lstm_indexes)
+
+        # Data is right aligned if the sequence is shorter than the max, and padded to zeros
+        lstm_indexes = lstm_indexes + (idxs.cpu() + 1 - torch.max(self.lstm_history_lens[idxs])).unsqueeze(-1)
+        lstm_pads = (lstm_pads + torch.unsqueeze(self.lstm_history_lens[idxs] - torch.max(self.lstm_history_lens[idxs]), -1)) < 0
+
+        # Un comment for Left aligned
+        #lstm_indexes = lstm_indexes + (idxs.cpu() - self.lstm_history_lens[idxs] + 1).unsqueeze(-1)
+        #lstm_pads = ...
+
+        lstm_history = self.obs_buf[lstm_indexes]
+        lstm_history[lstm_pads] = 0
 
         batch = dict(obs=self.obs_buf[idxs],
                      obs2=self.obs2_buf[idxs],
                      act=self.act_buf[idxs],
                      rew=self.rew_buf[idxs],
-                     lstm_history=torch.nn.utils.rnn.pack_padded_sequence(self.obs_buf[lstm_indexes],
-                                                                          lengths=self.lstm_history_lens[idxs],
-                                                                          batch_first=True,
-                                                                          enforce_sorted=False),
+                     lstm_history=lstm_history,
                      done=self.done_buf[idxs])
         return batch
 
