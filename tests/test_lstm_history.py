@@ -55,19 +55,21 @@ class TestBagBrainIO(unittest.TestCase):
             np.testing.assert_almost_equal(batch["obs"][i].numpy(), batch["lstm_history"][i, 0].numpy())
 
     def test_double_history_count(self):
-        replay = TorchLSTMReplayBuffer(obs_dim=2, act_dim=1, size=100, mode="right_aligned")
+        replay = TorchLSTMReplayBuffer(obs_dim=20, act_dim=1, size=100, device="cuda:0", mode="right_aligned")
 
         for i in range(100):
-            replay.store(obs=np.random.rand(2),
+            replay.store(obs=np.random.rand(20),
                          act=np.random.rand(1),
                          rew=float(i),
-                         next_obs=np.random.rand(2),
+                         next_obs=np.random.rand(20),
                          lstm_history_count=min(i + 1, random.randint(1, 10)),
                          done=False)
 
-        batch = replay.sample_batch(100)
+        for iteration in range(100):
+            batch = replay.sample_batch(100)
 
-        for i in range(100):
-            np.testing.assert_almost_equal(batch["obs"][i].numpy(), batch["lstm_history"][i, -1].numpy())
+            for i in range(100):
+                self.assertGreater(np.sum(np.abs(batch["obs"][i].cpu().numpy())), 1.0)
+                np.testing.assert_almost_equal(batch["obs"][i].cpu().numpy(), batch["lstm_history"][i, -1].cpu().numpy())
 
 
