@@ -21,6 +21,7 @@ import pandas as pd
 import pyarrow as pa
 import torch
 import onnxruntime as rt
+import tensorflow.compat.v1 as tf
 
 from bag_utils import read_bag
 from bot_env import RobotEnvironment, NormalizedRobotEnvironment
@@ -36,7 +37,7 @@ DEFAULT_MAX_GAP_SECONDS = 5
 
 DEFAULT_PUNISHMENT_MULTIPLIER = 16
 
-
+tf.disable_v2_behavior()
 
 def interpolate(pre_ts, pre_data, ts, post_ts, post_data):
     interval_len = post_ts - pre_ts
