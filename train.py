@@ -26,7 +26,7 @@ import tensorflow.compat.v1 as tf
 
 from bot_env import RobotEnvironment, NormalizedRobotEnvironment
 from actor_critic.core import MLPActorCritic
-from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic
+from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic, TorchLSTMReplayBuffer
 import yolo_reward
 from split_dropout import SplitDropout
 from yolo_reward import get_prediction, get_intermediate_layer
@@ -262,6 +262,7 @@ if __name__ == '__main__':
     parser.add_argument('--cache-dir', type=str, default=None, help='directory to store precomputed values')
     parser.add_argument('--epoch-steps', type=int, default=100, help='how often to save checkpoints')
     parser.add_argument('--seed', type=int, default=None, help='training seed')
+    parser.add_argument('--lstm-history', type=int, default=1, help='max amount of prior steps to feed into a network history')
     parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
     parser.add_argument('--lr', type=float, default=0.0001, help='learning rate')
     parser.add_argument('--lr-critic-schedule', default="lambda step: max(5e-6, 0.9998465 ** step)", help='learning rate schedule (Python lambda) for critic network')
@@ -305,8 +306,12 @@ if __name__ == '__main__':
     backbone_slice = opt.backbone_slice
     env_fn = lambda: NormalizedRobotEnvironment(slice=backbone_slice)
     replay_buffer_factory = ReplayBuffer
-    if opt.gpu_replay_buffer:
-        replay_buffer_factory = lambda obs_dim, act_dim, size: TorchReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, size=size, device=device)
+    if opt.lstm_history:
+        replay_buffer_factory = lambda obs_dim, act_dim, size: TorchLSTMReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
+                                                                                     size=size, device=device)
+    else:
+        replay_buffer_factory = lambda obs_dim, act_dim, size: TorchReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
+                                                                                 size=size, device=device)
 
     actor_hidden_sizes = [int(s) for s in opt.actor_hidden_sizes.split(',')]
     critic_hidden_sizes =[int(s) for s in opt.critic_hidden_sizes.split(',')]
@@ -415,6 +420,7 @@ if __name__ == '__main__':
                 act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
                 rew=reward,
                 next_obs=future_obs,
+                lstm_history_count=1,
                 done=terminated)
 
     t.close()
