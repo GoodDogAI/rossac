@@ -1,4 +1,5 @@
 from copy import deepcopy
+import contextlib
 import itertools
 import numpy as np
 import os
@@ -314,7 +315,7 @@ class SoftActorCritic:
 
         return loss_pi, pi_info
 
-    def update(self, data):
+    def update(self, data, amp_scaler=None):
         # Take both observations to the GPU for faster training
         for key in data.keys():
             data[key] = data[key].to(device=self.device)
@@ -323,12 +324,30 @@ class SoftActorCritic:
         data['obs2'] = self.dropout(data['obs2'])
         data['lstm_history'] = self.dropout(data['lstm_history'])
 
+        def get_amp_context():
+            if amp_scaler:
+                return torch.cuda.amp.autocast()
+            else:
+                return contextlib.nullcontext()
+
         # First run one gradient descent step for Q1 and Q2
         self.q_optimizer.zero_grad()
-        loss_q, q_info = self.compute_loss_q(data)
-        loss_q.backward()
+        with get_amp_context():
+            loss_q, q_info = self.compute_loss_q(data)
+        
+        if amp_scaler:
+            amp_scaler.scale(loss_q).backward()
+
+            amp_scaler.unscale_(self.q_optimizer)
+        else:
+            loss_q.backward()
+
         torch.nn.utils.clip_grad_norm_(self.q_params, self.grad_clip_q)
-        self.q_optimizer.step()
+
+        if amp_scaler:
+            amp_scaler.step(self.q_optimizer)
+        else:
+            self.q_optimizer.step()
 
         # Record things
         self.logger.store(LossQ=loss_q.item(), **q_info)
@@ -340,10 +359,24 @@ class SoftActorCritic:
 
         # Next run one gradient descent step for pi.
         self.pi_optimizer.zero_grad()
-        loss_pi, pi_info = self.compute_loss_pi(data)
-        loss_pi.backward()
+        with get_amp_context():
+            loss_pi, pi_info = self.compute_loss_pi(data)
+        
+        if amp_scaler:
+            amp_scaler.scale(loss_pi).backward()
+
+            amp_scaler.unscale_(self.pi_optimizer)
+        else:
+            loss_pi.backward()
+
         torch.nn.utils.clip_grad_norm_(self.ac.pi.parameters(), self.grad_clip_pi)
-        self.pi_optimizer.step()
+
+        if amp_scaler:
+            amp_scaler.step(self.pi_optimizer)
+
+            amp_scaler.update()
+        else:
+            self.pi_optimizer.step()
 
         # Unfreeze Q-networks so you can optimize it at next DDPG step.
         for p in self.q_params:
@@ -384,10 +417,10 @@ class SoftActorCritic:
         avg_action /= step_count
         return avg_rew, avg_action
 
-    def train(self, batch_size, batch_count):
+    def train(self, batch_size, batch_count, amp_scaler=None):
         for j in range(batch_count):
             batch = self.replay_buffer.sample_batch(batch_size)
-            self.update(data=batch)
+            self.update(data=batch, amp_scaler=amp_scaler)
 
     def sample_actions(self, batch_size):
         batch = self.replay_buffer.sample_batch(batch_size)
