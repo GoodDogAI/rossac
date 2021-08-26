@@ -7,7 +7,13 @@ from bot_env import RobotEnvironment
 
 def export(sac, device, file_name, env):
     sample_input = env.observation_space.sample()
+
+    # Expand to put the batch dimension in
     sample_input = np.expand_dims(sample_input, 0)
+
+    # In LSTM Mode, expand the time dimension also, to be a dynamic dimension
+    sample_input = np.expand_dims(sample_input, 0)
+
     sample_input = torch.from_numpy(sample_input).to(device=device)
 
     # Temporarily set the parameters needed for deterministic exports
@@ -19,6 +25,11 @@ def export(sac, device, file_name, env):
 
 
     torch.onnx.export(sac.pi, (sample_input,), file_name, verbose=False, opset_version=12,
+                      dynamic_axes={
+                          "yolo_intermediate": {
+                              1: "sequence"
+                          },
+                      },
                       input_names=["yolo_intermediate"], output_names=["actions", "stddev"])
 
     sac.pi.deterministic, sac.pi.with_logprob = orig_det, orig_logprob
