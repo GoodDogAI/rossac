@@ -269,6 +269,7 @@ if __name__ == '__main__':
     parser.add_argument('--actor-hidden-sizes', type=str, default='512,256,256', help='actor network hidden layer sizes')
     parser.add_argument('--critic-hidden-sizes', type=str, default='512,256,256', help='critic network hidden layer sizes')
     parser.add_argument('--checkpoint-path', type=str, default='checkpoint/sac.tar', help='path to save/load checkpoint from')
+    parser.add_argument('--wandb-mode', type=str, default='online', help='wandb mode (offline/online/disabled)')
     opt = parser.parse_args()
 
     if torch.cuda.is_available() and not opt.cpu:
@@ -427,6 +428,7 @@ if __name__ == '__main__':
     resume_dict = sac.load(opt.checkpoint_path) if os.path.exists(opt.checkpoint_path) else None
 
     wandb.init(project="sac-series1", entity="armyofrobots",
+               mode=opt.wandb_mode,
                resume=resume_dict is not None,
                name=resume_dict['run_name'] if resume_dict is not None else None,
                id=resume_dict['run_id'] if resume_dict is not None else None)
@@ -456,7 +458,8 @@ if __name__ == '__main__':
     if resume_dict is None:
         wandb.config.seed = opt.seed
 
-    wandb.watch(sac.ac, log="all", log_freq=100)  # Log gradients periodically
+    if opt.wandb_mode != 'disabled':
+        wandb.watch(sac.ac, log="all", log_freq=100)  # Log gradients periodically
 
     del all_entries
 
