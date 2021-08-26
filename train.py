@@ -264,6 +264,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=None, help='training seed')
     parser.add_argument('--lstm-history', type=int, default=1, help='max amount of prior steps to feed into a network history')
     parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
+    parser.add_argument('--no-mixed-precision', default=False, action="store_true", help='use full precision for training')
     parser.add_argument('--lr', type=float, default=0.0001, help='learning rate')
     parser.add_argument('--lr-critic-schedule', default="lambda step: max(5e-6, 0.9998465 ** step)", help='learning rate schedule (Python lambda) for critic network')
     parser.add_argument('--lr-actor-schedule', default="lambda step: max(5e-6, 0.9998465 ** step)", help='learning rate schedule (Python lambda) for actor network')
@@ -500,6 +501,8 @@ if __name__ == '__main__':
 
     alpha_schedule = eval(opt.alpha_schedule)
 
+    amp_scaler = torch.cuda.amp.GradScaler() if device and not opt.no_mixed_precision else None
+
     while True:
         start_time = time.perf_counter()
 
@@ -509,7 +512,7 @@ if __name__ == '__main__':
         alpha = alpha_schedule(i)
         sac.alpha.copy_(torch.tensor(alpha))
 
-        sac.train(batch_size=opt.batch_size, batch_count=batches_per_step)
+        sac.train(batch_size=opt.batch_size, batch_count=batches_per_step, amp_scaler=amp_scaler)
         lossQ = sum(sac.logger.epoch_dict['LossQ'][-batches_per_step:])/batches_per_step
         lossPi = sum(sac.logger.epoch_dict['LossPi'][-batches_per_step:])/batches_per_step
 
