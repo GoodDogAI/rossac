@@ -467,6 +467,7 @@ if __name__ == '__main__':
     wandb.config.actor_hidden_sizes = opt.actor_hidden_sizes
     wandb.config.critic_hidden_sizes = opt.critic_hidden_sizes
     wandb.config.batches_per_step = opt.batches_per_step
+    wandb.config.lstm_history = opt.lstm_history
     if resume_dict is None:
         wandb.config.seed = opt.seed
 
