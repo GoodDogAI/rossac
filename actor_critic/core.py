@@ -32,7 +32,7 @@ class SquashedGaussianMLPActor(nn.Module):
 
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_space, deterministic=False, with_logprob=True):
         super().__init__()
-        self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
+        self.net = mlp([obs_dim * 3] + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_space = act_space
@@ -103,7 +103,7 @@ class MLPQFunction(nn.Module):
 
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
-        self.q = mlp([obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
+        self.q = mlp([obs_dim * 3 + act_dim] + list(hidden_sizes) + [1], activation)
 
     def forward(self, obs_history, act, extra_obs=None):
         # Note: we pass in a history of observations, but not a history of actions at this point
