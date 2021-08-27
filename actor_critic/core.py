@@ -41,11 +41,19 @@ class SquashedGaussianMLPActor(nn.Module):
         self.with_logprob = with_logprob
         self.with_stddev = False
 
-    def forward(self, obs):
+    def forward(self, obs_history, extra_obs=None):
         if self.with_logprob and self.with_stddev:
             raise NotImplementedError
 
-        net_out = self.net(obs)
+        # You can use the extra_obs in an LSTM situation to process "one more frame" at the end of the usual history
+        if extra_obs is not None:
+            final_observation = extra_obs
+        else:
+            # Important, you cannot have negative slice or gather dimensions in TensorRT ONNX files!
+            final_observation = obs_history[:, obs_history.shape[1] - 1, :]
+
+        net_out = self.net(final_observation)
+
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
         log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
@@ -93,8 +101,15 @@ class MLPQFunction(nn.Module):
         super().__init__()
         self.q = mlp([obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
 
-    def forward(self, obs, act):
-        q = self.q(torch.cat([obs, act], dim=-1))
+    def forward(self, obs_history, act, extra_obs=None):
+        # Note: we pass in a history of observations, but not a history of actions at this point
+        if extra_obs is not None:
+            final_observation = extra_obs
+        else:
+            # Important, you cannot have negative slice or gather dimensions in TensorRT ONNX files!
+            final_observation = obs_history[:, obs_history.shape[1] - 1, :]
+
+        q = self.q(torch.cat([final_observation, act], dim=-1))
         return torch.squeeze(q, -1) # Critical to ensure q has right shape.
 
 class MLPActorCritic(nn.Module):

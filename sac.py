@@ -74,6 +74,71 @@ class TorchReplayBuffer:
                      done=self.done_buf[idxs])
         return batch
 
+
+class TorchLSTMReplayBuffer:
+    def __init__(self, obs_dim, act_dim, size, device=None, mode="right_aligned"):
+        assert mode in ["right_aligned", "padded_seq"]
+        self.device = device
+        self.mode = mode
+        self.obs_buf = torch.zeros(core.combined_shape(size, obs_dim), device=device, dtype=torch.float32)
+        self.obs2_buf = torch.zeros(core.combined_shape(size, obs_dim), device=device, dtype=torch.float32)
+        self.act_buf = torch.zeros(core.combined_shape(size, act_dim), device=device, dtype=torch.float32)
+        self.rew_buf = torch.zeros(size, device=device, dtype=torch.float32)
+        self.done_buf = torch.zeros(size, device=device, dtype=torch.float32)
+        self.lstm_history_lens = torch.zeros(size, device="cpu", dtype=torch.int64)
+        self.ptr, self.size, self.max_size = 0, 0, size
+
+    def store(self, obs, act, rew, next_obs, lstm_history_count, done):
+        with torch.no_grad():
+            # replace random entry when full
+            if self.size == self.max_size:
+                raise RuntimeError("In LSTM Mode, you can't exceed the size of your replay buffer")
+
+            if lstm_history_count > self.size + 1:
+                raise RuntimeError("In LSTM Mode, you can't reference entries that are not entered yet")
+
+            if lstm_history_count <= 0:
+                raise RuntimeError("LSTM History count should be at least 1 (meaning that the current entry is the only one shown)")
+
+            self.obs_buf[self.ptr] = torch.as_tensor(obs, device=self.device)
+            self.obs2_buf[self.ptr] = torch.as_tensor(next_obs, device=self.device)
+            self.act_buf[self.ptr] = torch.as_tensor(act, device=self.device)
+            self.rew_buf[self.ptr] = torch.as_tensor(rew, device=self.device)
+            self.done_buf[self.ptr] = torch.as_tensor(done, device=self.device)
+
+            self.lstm_history_lens[self.ptr] = lstm_history_count
+            self.ptr += 1
+            self.size = min(self.size + 1, self.max_size)
+
+    def sample_batch(self, batch_size=32):
+        idxs = torch.randint(0, self.size, (batch_size,), dtype=torch.int64, device=self.device)
+        lstm_indexes = torch.arange(0, torch.max(self.lstm_history_lens[idxs]), dtype=torch.int64)
+        lstm_indexes = lstm_indexes.repeat(batch_size, 1)
+        lstm_pads = torch.clone(lstm_indexes)
+
+        if self.mode == "right_aligned":
+            # Data is right aligned if the sequence is shorter than the max, and padded to zeros
+            # If you want to just access the last N'th element, then you want to right align sequences
+            lstm_indexes = lstm_indexes + (idxs.cpu() + 1 - torch.max(self.lstm_history_lens[idxs])).unsqueeze(-1)
+            lstm_pads = (lstm_pads + torch.unsqueeze(self.lstm_history_lens[idxs] - torch.max(self.lstm_history_lens[idxs]), -1)) < 0
+            lstm_history = self.obs_buf[lstm_indexes]
+            lstm_history[lstm_pads] = 0
+        elif self.mode == "padded_seq":
+            # Data is packed left-aligned into a torch Padded Sequence for use in their LSTMs API
+            lstm_indexes = lstm_indexes + (idxs.cpu() - self.lstm_history_lens[idxs] + 1).unsqueeze(-1)
+            lstm_history = torch.nn.utils.rnn.pack_padded_sequence(self.obs_buf[lstm_indexes],
+                                                                   lengths=self.lstm_history_lens[idxs],
+                                                                   batch_first=True,
+                                                                   enforce_sorted=False)
+
+        batch = dict(obs=self.obs_buf[idxs],
+                     obs2=self.obs2_buf[idxs],
+                     act=self.act_buf[idxs],
+                     rew=self.rew_buf[idxs],
+                     lstm_history=lstm_history,
+                     done=self.done_buf[idxs])
+        return batch
+
 class SoftActorCritic:
     def __init__(self, env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(),
             replay_size=int(1e6), gamma=0.99,
@@ -202,19 +267,19 @@ class SoftActorCritic:
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(self, data):
-        o, a, r, o2, d = data['obs'], data['act'], data['rew'], data['obs2'], data['done']
+        o, a, r, o2, d, l = data['obs'], data['act'], data['rew'], data['obs2'], data['done'], data['lstm_history']
 
-        q1 = self.ac.q1(o, a)
-        q2 = self.ac.q2(o, a)
+        q1 = self.ac.q1(l, a)
+        q2 = self.ac.q2(l, a)
 
         # Bellman backup for Q functions
         with torch.no_grad():
             # Target actions come from *current* policy
-            a2, logp_a2 = self.ac.pi(o2)
+            a2, logp_a2 = self.ac.pi(l, extra_obs=o2)
 
             # Target Q-values
-            q1_pi_targ = self.ac_targ.q1(o2, a2)
-            q2_pi_targ = self.ac_targ.q2(o2, a2)
+            q1_pi_targ = self.ac_targ.q1(l, a2, extra_obs=o2)
+            q2_pi_targ = self.ac_targ.q2(l, a2, extra_obs=o2)
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
             backup = r + self.gamma * (1 - d) * (q_pi_targ - self.alpha * logp_a2)
 
@@ -231,10 +296,10 @@ class SoftActorCritic:
 
     # Set up function for computing SAC pi loss
     def compute_loss_pi(self, data):
-        o = data['obs']
-        pi, logp_pi = self.ac.pi(o)
-        q1_pi = self.ac.q1(o, pi)
-        q2_pi = self.ac.q2(o, pi)
+        l = data['lstm_history']
+        pi, logp_pi = self.ac.pi(l)
+        q1_pi = self.ac.q1(l, pi)
+        q2_pi = self.ac.q2(l, pi)
         q_pi = torch.min(q1_pi, q2_pi)
 
         # Entropy-regularized policy loss
@@ -253,6 +318,7 @@ class SoftActorCritic:
 
         data['obs'] = self.dropout(data['obs'])
         data['obs2'] = self.dropout(data['obs2'])
+        data['lstm_history'] = self.dropout(data['lstm_history'])
 
         # First run one gradient descent step for Q1 and Q2
         self.q_optimizer.zero_grad()
@@ -322,11 +388,11 @@ class SoftActorCritic:
 
     def sample_actions(self, batch_size):
         batch = self.replay_buffer.sample_batch(batch_size)
-        o = batch['obs'].to(device=self.device)
+        l = batch['lstm_history'].to(device=self.device)
         det = self.ac.pi.deterministic
         try:
             self.ac.pi.deterministic = True
-            return self.ac.pi(o)
+            return self.ac.pi(l)
         finally:
             self.ac.pi.deterministic = det
 
