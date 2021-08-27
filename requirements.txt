@@ -2,6 +2,9 @@ numpy
 torch
 dataclasses
 
+# For manipulating onnx files.
+onnx
+
 # For reading ros bags
 --extra-index-url https://rospypi.github.io/simple/
 rospy
