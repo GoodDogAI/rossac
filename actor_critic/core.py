@@ -49,7 +49,7 @@ class SquashedGaussianMLPActor(nn.Module):
         if extra_obs is not None:
             final_observation = extra_obs
         else:
-            final_observation = obs_history[:, -1, :]
+            final_observation = obs_history[:, obs_history.shape[1] - 1, :]
 
         net_out = self.net(final_observation)
 
@@ -105,7 +105,7 @@ class MLPQFunction(nn.Module):
         if extra_obs is not None:
             final_observation = extra_obs
         else:
-            final_observation = obs_history[:, -1, :]
+            final_observation = obs_history[:, obs_history.shape[1] - 1, :]
 
         q = self.q(torch.cat([final_observation, act], dim=-1))
         return torch.squeeze(q, -1) # Critical to ensure q has right shape.
