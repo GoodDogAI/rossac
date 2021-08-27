@@ -267,6 +267,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=0.0001, help='learning rate')
     parser.add_argument('--lr-critic-schedule', default="lambda step: max(5e-6, 0.9998465 ** step)", help='learning rate schedule (Python lambda) for critic network')
     parser.add_argument('--lr-actor-schedule', default="lambda step: max(5e-6, 0.9998465 ** step)", help='learning rate schedule (Python lambda) for actor network')
+    parser.add_argument('--alpha-schedule', default="lambda step: 0.2", help='schedule for entropy regularization (alpha)')
     parser.add_argument('--actor-hidden-sizes', type=str, default='512,256,256', help='actor network hidden layer sizes')
     parser.add_argument('--critic-hidden-sizes', type=str, default='512,256,256', help='critic network hidden layer sizes')
     parser.add_argument('--checkpoint-path', type=str, default='checkpoint/sac.tar', help='path to save/load checkpoint from')
@@ -464,6 +465,7 @@ if __name__ == '__main__':
     wandb.config.backbone_slice = backbone_slice
     wandb.config.lr_critic_schedule = opt.lr_critic_schedule
     wandb.config.lr_actor_schedule = opt.lr_actor_schedule
+    wandb.config.alpha_schedule = opt.alpha_schedule
     wandb.config.actor_hidden_sizes = opt.actor_hidden_sizes
     wandb.config.critic_hidden_sizes = opt.critic_hidden_sizes
     wandb.config.batches_per_step = opt.batches_per_step
@@ -496,11 +498,16 @@ if __name__ == '__main__':
     pi_lr_schedule = lr_scheduler(sac.pi_optimizer, opt.lr_actor_schedule)
     q_lr_schedule = lr_scheduler(sac.q_optimizer, opt.lr_critic_schedule)
 
+    alpha_schedule = eval(opt.alpha_schedule)
+
     while True:
         start_time = time.perf_counter()
 
         pi_lr_schedule.step()
         q_lr_schedule.step()
+
+        alpha = alpha_schedule(i)
+        sac.alpha.copy_(torch.tensor(alpha))
 
         sac.train(batch_size=opt.batch_size, batch_count=batches_per_step)
         lossQ = sum(sac.logger.epoch_dict['LossQ'][-batches_per_step:])/batches_per_step
@@ -512,6 +519,7 @@ if __name__ == '__main__':
                       "LossPi": lossPi,
                       "LR_Q": q_lr_schedule.get_last_lr()[0],
                       "LR_Pi": pi_lr_schedule.get_last_lr()[0],
+                      "Alpha": alpha,
                   })
 
         sample_action = sac.logger.epoch_dict['Pi'][-1][0]

@@ -224,7 +224,10 @@ class SoftActorCritic:
 
         self.max_ep_len = max_ep_len
 
-        self.alpha = alpha
+        self.alpha = torch.tensor(alpha)
+        if device:
+            self.alpha = self.alpha.to(device)
+
         self.gamma = gamma
         self.polyak = polyak
         self.lr = lr
