@@ -49,6 +49,7 @@ class SquashedGaussianMLPActor(nn.Module):
         if extra_obs is not None:
             final_observation = extra_obs
         else:
+            # Important, you cannot have negative slice or gather dimensions in TensorRT ONNX files!
             final_observation = obs_history[:, obs_history.shape[1] - 1, :]
 
         net_out = self.net(final_observation)
@@ -105,6 +106,7 @@ class MLPQFunction(nn.Module):
         if extra_obs is not None:
             final_observation = extra_obs
         else:
+            # Important, you cannot have negative slice or gather dimensions in TensorRT ONNX files!
             final_observation = obs_history[:, obs_history.shape[1] - 1, :]
 
         q = self.q(torch.cat([final_observation, act], dim=-1))
