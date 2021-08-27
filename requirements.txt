@@ -2,9 +2,6 @@ numpy
 torch
 dataclasses
 
-# For manipulating onnx files.
-onnx
-
 # For reading ros bags
 --extra-index-url https://rospypi.github.io/simple/
 rospy
@@ -18,6 +15,7 @@ pandas
 pyarrow
 
 # For running the same ONNX models as run on the bot locally, for loss function estimation
+onnx
 onnxruntime
 
 # For reporting and saving training logs
