@@ -7,8 +7,8 @@ import onnxruntime as rt
 
 
 class TestBagBrainIO(unittest.TestCase):
-    test_bag = "/home/jake/bagfiles/test_bags/record-brain-lstm-peachy-resonance-test-samp0.0_2021-08-26-18-36-04_0.bag"
-    test_onnx = "/home/jake/bagfiles/test_bags/lstm-peachy-resonance-test.onnx"
+    test_bag = "/home/jake/bagfiles/test_bags/record-brain-freshplant18200-samp0.0_2021-08-27-15-49-21_1.bag"
+    test_onnx = "/home/jake/bagfiles/test_bags/freshplant18200.onnx"
     test_yolo_onnx = os.path.join(os.path.dirname(__file__), "..", "yolov5s.onnx")
 
     def test_lstm_sample(self):

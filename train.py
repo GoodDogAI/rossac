@@ -262,7 +262,7 @@ if __name__ == '__main__':
     parser.add_argument('--cache-dir', type=str, default=None, help='directory to store precomputed values')
     parser.add_argument('--epoch-steps', type=int, default=100, help='how often to save checkpoints')
     parser.add_argument('--seed', type=int, default=None, help='training seed')
-    parser.add_argument('--lstm-history', type=int, default=3, help='max amount of prior steps to feed into a network history')
+    parser.add_argument('--lstm-history', type=int, default=4, help='max amount of prior steps to feed into a network history')
     parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
     parser.add_argument('--lr', type=float, default=0.0001, help='learning rate')
     parser.add_argument('--lr-critic-schedule', default="lambda step: max(5e-6, 0.9998465 ** step)", help='learning rate schedule (Python lambda) for critic network')

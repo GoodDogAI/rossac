@@ -5,6 +5,9 @@ import torch
 
 from bot_env import RobotEnvironment
 
+# Mock size of the input history to use during export
+INPUT_HISTORY_EXAMPLE_SIZE = 8
+
 
 def export(sac, device, file_name, env):
     sample_input = env.observation_space.sample()
@@ -14,6 +17,7 @@ def export(sac, device, file_name, env):
 
     # In LSTM Mode, expand the time dimension also, to be a dynamic dimension
     sample_input = np.expand_dims(sample_input, 0)
+    sample_input = np.repeat(sample_input, repeats=INPUT_HISTORY_EXAMPLE_SIZE, axis=1)
 
     sample_input = torch.from_numpy(sample_input).to(device=device)
 

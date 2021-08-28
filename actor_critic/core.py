@@ -25,6 +25,23 @@ def count_vars(module):
     return sum([np.prod(p.shape) for p in module.parameters()])
 
 
+def build_obs_history(obs_history, extra_obs=None):
+    # You can use the extra_obs in an LSTM situation to process "one more frame" at the end of the usual history
+    if extra_obs is not None:
+        final_observation = torch.cat([obs_history[:, obs_history.shape[1] - 3, :],
+                                       obs_history[:, obs_history.shape[1] - 2, :],
+                                       obs_history[:, obs_history.shape[1] - 1, :],
+                                       extra_obs], dim=-1)
+    else:
+        # Important, you cannot have negative slice or gather dimensions in TensorRT ONNX files!
+        final_observation = torch.cat([obs_history[:, obs_history.shape[1] - 4, :],
+                                       obs_history[:, obs_history.shape[1] - 3, :],
+                                       obs_history[:, obs_history.shape[1] - 2, :],
+                                       obs_history[:, obs_history.shape[1] - 1, :]], dim=-1)
+
+    return final_observation
+
+
 LOG_STD_MAX = 2
 LOG_STD_MIN = -20
 
@@ -32,7 +49,7 @@ class SquashedGaussianMLPActor(nn.Module):
 
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_space, deterministic=False, with_logprob=True):
         super().__init__()
-        self.net = mlp([obs_dim * 3] + list(hidden_sizes), activation, activation)
+        self.net = mlp([obs_dim * 4] + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_space = act_space
@@ -46,15 +63,7 @@ class SquashedGaussianMLPActor(nn.Module):
             raise NotImplementedError
 
         # You can use the extra_obs in an LSTM situation to process "one more frame" at the end of the usual history
-        if extra_obs is not None:
-            final_observation = torch.cat([obs_history[:, obs_history.shape[1] - 2, :],
-                                           obs_history[:, obs_history.shape[1] - 1, :],
-                                           extra_obs], dim=-1)
-        else:
-            # Important, you cannot have negative slice or gather dimensions in TensorRT ONNX files!
-            final_observation = torch.cat([obs_history[:, obs_history.shape[1] - 3, :],
-                                           obs_history[:, obs_history.shape[1] - 2, :],
-                                           obs_history[:, obs_history.shape[1] - 1, :]], dim=-1)
+        final_observation = build_obs_history(obs_history, extra_obs)
 
         net_out = self.net(final_observation)
 
@@ -103,19 +112,11 @@ class MLPQFunction(nn.Module):
 
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
-        self.q = mlp([obs_dim * 3 + act_dim] + list(hidden_sizes) + [1], activation)
+        self.q = mlp([obs_dim * 4 + act_dim] + list(hidden_sizes) + [1], activation)
 
     def forward(self, obs_history, act, extra_obs=None):
-        # Note: we pass in a history of observations, but not a history of actions at this point
-        if extra_obs is not None:
-            final_observation = torch.cat([obs_history[:, obs_history.shape[1] - 2, :],
-                                           obs_history[:, obs_history.shape[1] - 1, :],
-                                           extra_obs], dim=-1)
-        else:
-            # Important, you cannot have negative slice or gather dimensions in TensorRT ONNX files!
-            final_observation = torch.cat([obs_history[:, obs_history.shape[1] - 3, :],
-                                           obs_history[:, obs_history.shape[1] - 2, :],
-                                           obs_history[:, obs_history.shape[1] - 1, :]], dim=-1)
+        # You can use the extra_obs in an LSTM situation to process "one more frame" at the end of the usual history
+        final_observation = build_obs_history(obs_history, extra_obs)
 
         q = self.q(torch.cat([final_observation, act], dim=-1))
         return torch.squeeze(q, -1) # Critical to ensure q has right shape.
