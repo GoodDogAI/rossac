@@ -526,7 +526,7 @@ if __name__ == '__main__':
                   })
 
         sample_action = sac.logger.epoch_dict['Pi'][-1][0]
-        step_time = (time.perf_counter() - start_time) / batches_per_step
+        step_time = time.perf_counter() - start_time
         print(f"\r{i:03d} Loss: Q: {lossQ:.4g}, Pi: {lossPi:.4g}. Step time: {step_time:0.3f} Sample action: {sample_action}          ",end="")
 
         checkpoint_name = f"checkpoints/sac-{wandb.run.name}-{i:05d}"
