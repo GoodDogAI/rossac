@@ -111,6 +111,16 @@ def sum_centered_objects_present(pred: List[np.ndarray]) -> float:
            centered_objects_present(pred[1], yolo2) + \
            centered_objects_present(pred[2], yolo3)
 
+def sum_centered_objects_present_weighted_closer(pred: List[np.ndarray]) -> float:
+    # all_bboxes = detect_yolo_bboxes(pred[0], yolo1) + \
+    #              detect_yolo_bboxes(pred[1], yolo2) + \
+    #              detect_yolo_bboxes(pred[2], yolo3)
+    #print(all_bboxes)
+
+    return centered_objects_present(pred[0], yolo1) * 0.1 + \
+           centered_objects_present(pred[1], yolo2) * 0.5 + \
+           centered_objects_present(pred[2], yolo3) * 0.9
+
 
 def get_prediction(sess: rt.InferenceSession, image_np: np.ndarray) -> List[np.ndarray]:
     # First shape it into the 1xWxHx1 format
