@@ -26,3 +26,6 @@ tqdm
 
 # For unit testing (QuickCheck style)
 hypothesis
+
+# For loading and saving audio files
+soundfile
