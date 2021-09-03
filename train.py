@@ -488,7 +488,7 @@ if __name__ == '__main__':
     epoch_start = time.perf_counter()
 
     i = resume_dict['step']+1 if resume_dict is not None else 0
-    batches_per_step = SAMPLES_PER_STEP / opt.batch_size
+    batches_per_step = SAMPLES_PER_STEP // opt.batch_size
 
     def lr_scheduler(optim, lambda_code):
         return torch.optim.lr_scheduler.LambdaLR(
