@@ -25,21 +25,20 @@ def count_vars(module):
     return sum([np.prod(p.shape) for p in module.parameters()])
 
 
-def build_obs_history(obs_history, extra_obs=None):
+def build_obs_history(obs_history, history_indexes, extra_obs=None):
+    data = []
+
     # You can use the extra_obs in an LSTM situation to process "one more frame" at the end of the usual history
     if extra_obs is not None:
-        final_observation = torch.cat([obs_history[:, obs_history.shape[1] - 3, :],
-                                       obs_history[:, obs_history.shape[1] - 2, :],
-                                       obs_history[:, obs_history.shape[1] - 1, :],
-                                       extra_obs], dim=-1)
-    else:
-        # Important, you cannot have negative slice or gather dimensions in TensorRT ONNX files!
-        final_observation = torch.cat([obs_history[:, obs_history.shape[1] - 4, :],
-                                       obs_history[:, obs_history.shape[1] - 3, :],
-                                       obs_history[:, obs_history.shape[1] - 2, :],
-                                       obs_history[:, obs_history.shape[1] - 1, :]], dim=-1)
+        for index in history_indexes[1:]:
+            data.append(obs_history[:, obs_history.shape[1] + index + 1, :]) # Offset by one, because you include the extra_obs as the last entry
 
-    return final_observation
+        data.append(extra_obs)
+    else:
+        for index in history_indexes:
+            data.append(obs_history[:, obs_history.shape[1] + index, :])
+
+    return torch.cat(data, dim=-1)
 
 
 LOG_STD_MAX = 2
@@ -47,12 +46,13 @@ LOG_STD_MIN = -20
 
 class SquashedGaussianMLPActor(nn.Module):
 
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_space, deterministic=False, with_logprob=True):
+    def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_space, history_indexes, deterministic=False, with_logprob=True):
         super().__init__()
         self.net = mlp([obs_dim * 4] + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_space = act_space
+        self.history_indexes = history_indexes
 
         self.deterministic = deterministic
         self.with_logprob = with_logprob
@@ -63,7 +63,7 @@ class SquashedGaussianMLPActor(nn.Module):
             raise NotImplementedError
 
         # You can use the extra_obs in an LSTM situation to process "one more frame" at the end of the usual history
-        final_observation = build_obs_history(obs_history, extra_obs)
+        final_observation = build_obs_history(obs_history, self.history_indexes, extra_obs)
 
         net_out = self.net(final_observation)
 
@@ -110,13 +110,14 @@ class SquashedGaussianMLPActor(nn.Module):
 
 class MLPQFunction(nn.Module):
 
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
+    def __init__(self, obs_dim, act_dim, hidden_sizes, activation, history_indexes):
         super().__init__()
+        self.history_indexes = history_indexes
         self.q = mlp([obs_dim * 4 + act_dim] + list(hidden_sizes) + [1], activation)
 
     def forward(self, obs_history, act, extra_obs=None):
         # You can use the extra_obs in an LSTM situation to process "one more frame" at the end of the usual history
-        final_observation = build_obs_history(obs_history, extra_obs)
+        final_observation = build_obs_history(obs_history, self.history_indexes, extra_obs)
 
         q = self.q(torch.cat([final_observation, act], dim=-1))
         return torch.squeeze(q, -1) # Critical to ensure q has right shape.
@@ -126,7 +127,8 @@ class MLPActorCritic(nn.Module):
     def __init__(self, observation_space, action_space,
                  actor_hidden_sizes=(512,256,256),
                  critic_hidden_sizes=(512,256,256),
-                 activation=nn.SELU):
+                 activation=nn.SELU,
+                 history_indexes=(-1,)):
         super().__init__()
 
         if len(actor_hidden_sizes) == 0 or len(critic_hidden_sizes) == 0:
@@ -136,9 +138,9 @@ class MLPActorCritic(nn.Module):
         act_dim = action_space.shape[0]
 
         # build policy and value functions
-        self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, actor_hidden_sizes, activation, action_space)
-        self.q1 = MLPQFunction(obs_dim, act_dim, critic_hidden_sizes, activation)
-        self.q2 = MLPQFunction(obs_dim, act_dim, critic_hidden_sizes, activation)
+        self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, actor_hidden_sizes, activation, action_space, history_indexes)
+        self.q1 = MLPQFunction(obs_dim, act_dim, critic_hidden_sizes, activation, history_indexes)
+        self.q2 = MLPQFunction(obs_dim, act_dim, critic_hidden_sizes, activation, history_indexes)
 
     def act(self, obs, deterministic=False):
         old_deterministic = self.pi.deterministic

@@ -77,7 +77,7 @@ class TorchReplayBuffer:
 
 
 class TorchLSTMReplayBuffer:
-    def __init__(self, obs_dim, act_dim, size, device=None, mode="right_aligned"):
+    def __init__(self, obs_dim, act_dim, size, device=None, history_size=1, mode="right_aligned"):
         assert mode in ["right_aligned", "padded_seq"]
         self.device = device
         self.mode = mode
@@ -87,6 +87,7 @@ class TorchLSTMReplayBuffer:
         self.rew_buf = torch.zeros(size, device=device, dtype=torch.float32)
         self.done_buf = torch.zeros(size, device=device, dtype=torch.float32)
         self.lstm_history_lens = torch.zeros(size, device="cpu", dtype=torch.int64)
+        self.history_size = history_size
         self.ptr, self.size, self.max_size = 0, 0, size
 
     def store(self, obs, act, rew, next_obs, lstm_history_count, done):
@@ -113,7 +114,7 @@ class TorchLSTMReplayBuffer:
 
     def sample_batch(self, batch_size=32):
         idxs = torch.randint(0, self.size, (batch_size,), dtype=torch.int64, device=self.device)
-        lstm_indexes = torch.arange(0, torch.max(self.lstm_history_lens[idxs]), dtype=torch.int64)
+        lstm_indexes = torch.arange(0, self.history_size, dtype=torch.int64)
         lstm_indexes = lstm_indexes.repeat(batch_size, 1)
         lstm_pads = torch.clone(lstm_indexes)
 
