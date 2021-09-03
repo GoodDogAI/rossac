@@ -48,7 +48,7 @@ class SquashedGaussianMLPActor(nn.Module):
 
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_space, history_indexes, deterministic=False, with_logprob=True):
         super().__init__()
-        self.net = mlp([obs_dim * 4] + list(hidden_sizes), activation, activation)
+        self.net = mlp([obs_dim * len(history_indexes)] + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_space = act_space
@@ -113,7 +113,7 @@ class MLPQFunction(nn.Module):
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation, history_indexes):
         super().__init__()
         self.history_indexes = history_indexes
-        self.q = mlp([obs_dim * 4 + act_dim] + list(hidden_sizes) + [1], activation)
+        self.q = mlp([obs_dim * len(history_indexes) + act_dim] + list(hidden_sizes) + [1], activation)
 
     def forward(self, obs_history, act, extra_obs=None):
         # You can use the extra_obs in an LSTM situation to process "one more frame" at the end of the usual history

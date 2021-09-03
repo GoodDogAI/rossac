@@ -323,6 +323,8 @@ if __name__ == '__main__':
     critic_hidden_sizes = [int(s) for s in opt.critic_hidden_sizes.split(',')]
     history_indexes = [int(s) for s in opt.history_indexes.split(',')]
 
+    assert history_indexes[0] == -1, "First history index needs to be -1, and will be replaced with extra_obs during SAC bellman step"
+
     actor_critic_args = {
         'actor_hidden_sizes': actor_hidden_sizes,
         'critic_hidden_sizes': critic_hidden_sizes,
