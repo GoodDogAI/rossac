@@ -416,7 +416,6 @@ if __name__ == '__main__':
 
             obs = make_observation(entry)
             future_obs = make_observation(next_entry)
-            lstm_history_count += 1
 
             if np.isnan(obs).any() or np.isnan(future_obs).any() or np.isnan(reward).any():
                 nans += 1
@@ -433,6 +432,7 @@ if __name__ == '__main__':
             if terminated:
                 dones += 1
 
+            lstm_history_count += 1
             sac.replay_buffer.store(obs=obs,
                 act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
                 rew=reward,
