@@ -1,35 +1,26 @@
 import argparse
-import functools
 import os.path
 import random
 import shutil
 import time
 
 import wandb
-import png
 import glob
-import rosbag
 
 from typing import Dict, Any, Callable, List
-from dataclasses import dataclass, field
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 
 import numpy as np
-import pandas as pd
-import pyarrow as pa
 import torch
-import onnxruntime as rt
 
 import tensorflow.compat.v1 as tf
 
 from bot_env import RobotEnvironment, NormalizedRobotEnvironment
 from actor_critic.core import MLPActorCritic
+from bag_cache import read_bag
+from replay_loader import load_entries, make_observation
 from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic, TorchLSTMReplayBuffer
-import yolo_reward
 from split_dropout import SplitDropout
-from yolo_reward import get_prediction, get_intermediate_layer
 from dump_onnx import export
 
 DEFAULT_MAX_GAP_SECONDS = 5
@@ -39,211 +30,6 @@ DEFAULT_PUNISHMENT_MULTIPLIER = 16
 SAMPLES_PER_STEP = 1024*1024
 
 tf.disable_v2_behavior()
-
-@functools.lru_cache()
-def get_onnx_sess(onnx_path: str) -> rt.InferenceSession:
-    print("Starting ONNX inference session")
-    return rt.InferenceSession(onnx_path)
-
-
-def interpolate(pre_ts, pre_data, ts, post_ts, post_data):
-    interval_len = post_ts - pre_ts
-    if interval_len == 0: return pre_data
-    target_offset = ts - pre_ts
-    interval_diff = post_data - pre_data
-    return pre_data + (interval_diff * target_offset / interval_len)
-
-assert(interpolate(1, 1, 5, 11, 11) == 5)
-
-
-def interpolate_events(primary, secondaries, max_gap_ns):
-    primary = sorted(primary.items())
-    secondaries = list(map(lambda dict: list(sorted(dict.items())), secondaries))
-
-    result = []
-    for ts, event in primary:
-        interpolated = []
-        for i in range(len(secondaries)):
-            while len(secondaries[i]) > 0:
-                if len(secondaries[i]) == 1:
-                    # only one potentially correlated reading
-                    secondary_ts, data = secondaries[i][0]
-                    if abs(secondary_ts - ts) < max_gap_ns:
-                        interpolated.append(data)
-                    break
-                elif secondaries[i][1][0] < ts:
-                    # next and next+1 readings are both before "now"
-                    # means we can drop next and advance to next+1
-                    secondaries[i].pop(0)
-                elif secondaries[i][0][0] >= ts:
-                    # all readings are after "now", so we may only use the first
-                    secondary_ts, data = secondaries[i][0]
-                    if abs(secondary_ts - ts) < max_gap_ns:
-                        interpolated.append(data)
-                    break
-                else:
-                    # at this point next is before "now", and next+1 is after "now"
-                    pre_ts, pre_data = secondaries[i][0]
-                    post_ts, post_data = secondaries[i][1]
-                    if abs(pre_ts - ts) < max_gap_ns and abs(post_ts - ts) < max_gap_ns:
-                        data = interpolate(pre_ts, pre_data, ts, post_ts, post_data)
-                        interpolated.append(data)
-                    elif abs(pre_ts - ts) < max_gap_ns:
-                        interpolated.append(pre_data)
-                    elif abs(post_ts - ts) < max_gap_ns:
-                        interpolated.append(post_data)
-                    break
-            if len(interpolated) != i + 1:
-                break
-        if len(interpolated) != len(secondaries):
-            continue
-        result.append((ts, event, interpolated))
-
-    return result
-
-def _flatten(arr):
-    return np.reshape(arr, -1)
-
-
-DATAFRAME_COLUMNS = [
-    # The first entry is the one that we will interpolate over
-    "yolo_intermediate",
-    "reward",
-
-    # pan, tilt in steps, (1024 steps = 300 degrees)
-    "dynamixel_cur_state",
-    "dynamixel_command_state",
-
-    # commanded forward speed, rotational speed
-    "cmd_vel",
-
-    # Each wheels actual speed in rotations per second
-    "odrive_feedback",
-
-    # head gyro rate, in radians per second
-    "head_gyro",
-
-    # head acceleration, in meters per second
-    "head_accel",
-
-    # robot bus voltage, in Volts
-    "vbus",
-
-    # indicates reward from stop button (0 = unpressed, -1 = pressed)
-    "punishment",
-]
-
-
-def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
-            reward_delay_ms: int, punish_backtrack_ms: int) -> pd.DataFrame:
-    print(f"Opening {bag_file}")
-    bag_cache_name = os.path.join(opt.cache_dir, f"{os.path.basename(bag_file)}_{reward_func_name}_+{reward_delay_ms}ms_-{punish_backtrack_ms}ms.arrow")
-
-    try:
-        return _read_mmapped_bag(bag_cache_name)
-    except IOError:
-        write_bag_cache(bag_file, bag_cache_name, backbone_onnx_path, reward_func_name,
-                        reward_delay_ms=reward_delay_ms, punish_backtrack_ms=punish_backtrack_ms)
-        return _read_mmapped_bag(bag_cache_name)
-
-
-def _read_mmapped_bag(bag_cache_name: str) -> pd.DataFrame:
-    source = pa.memory_map(bag_cache_name, "r")
-    table = pa.ipc.RecordBatchFileReader(source).read_all()
-    return table.to_pandas()
-
-
-def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str,
-                    reward_delay_ms: int, punish_backtrack_ms: int):
-    bag = rosbag.Bag(bag_file, 'r')
-    entries = defaultdict(dict)
-    reward_func = getattr(yolo_reward, reward_func_name)
-
-    # If you are the first bag in a series, don't output any entries until you received one message from each channel
-    # This is because it can take some time for everything to fully initialize (ex. if building tensorrt models),
-    # and we don't want bogus data points.
-    wait_for_each_msg = bag_file.endswith("_0.bag")
-    received_topic = defaultdict(bool)
-    ros_topics = [opt.camera_topic,
-                  '/dynamixel_workbench/dynamixel_state',
-                  '/camera/accel/sample',
-                  '/camera/gyro/sample',
-                  '/head_feedback',
-                  '/cmd_vel',
-                  '/odrive_feedback',
-                  '/reward_button',
-                  '/vbus']
-
-    for topic, msg, ts in bag.read_messages(ros_topics):
-        full_ts = ts.nsecs + ts.secs * 1000000000
-
-        received_topic[topic] = True
-        if wait_for_each_msg and not all(received_topic[topic] for topic in ros_topics):
-            continue
-
-        if topic == opt.camera_topic:
-            img = []
-            for i in range(0, len(msg.data), msg.step):
-                img.append(np.frombuffer(msg.data[i:i + msg.step], dtype=np.uint8))
-
-            assert "infra" in opt.camera_topic, "Expecting mono infrared images only right now"
-
-            # Convert list of byte arrays to numpy array
-            image_np = np.array(img)
-            pred = get_prediction(get_onnx_sess(backbone_onnx_path), image_np)
-            intermediate = get_intermediate_layer(pred)
-            reward = reward_func(pred)
-
-            if np.isnan(intermediate).any():
-                print(f"Invalid YOLO output in bag: {bag_file} at ts {ts}")
-                img_mode = 'L' if "infra" in opt.camera_topic else 'RGB'
-                png.from_array(img, mode=img_mode).save(os.path.join(opt.cache_dir, f"error_{os.path.basename(bag_file)}_{ts}.png"))
-                continue
-
-            entries["yolo_intermediate"][full_ts] = _flatten(intermediate)
-            entries["reward"][full_ts + reward_delay_ms * 1000000] = reward
-        elif topic == '/reward_button':
-            entries["punishment"][full_ts + punish_backtrack_ms * 1000000] = np.array([msg.data])
-        elif topic == '/dynamixel_workbench/dynamixel_state':
-            entries["dynamixel_cur_state"][full_ts] = np.array([msg.dynamixel_state[0].present_position,
-                                                                msg.dynamixel_state[1].present_position])
-        elif topic == "/head_feedback":
-            entries["dynamixel_command_state"][full_ts] = np.array([msg.pan_command,
-                                                                    msg.tilt_command])
-        elif topic == "/cmd_vel":
-            entries["cmd_vel"][full_ts] = np.array([msg.linear.x,
-                                                    msg.angular.z])
-        elif topic == "/camera/accel/sample":
-            entries["head_accel"][full_ts] = np.array([msg.linear_acceleration.x,
-                                                       msg.linear_acceleration.y,
-                                                       msg.linear_acceleration.z])
-        elif topic == "/camera/gyro/sample":
-            entries["head_gyro"][full_ts] = np.array([msg.angular_velocity.x,
-                                                      msg.angular_velocity.y,
-                                                      msg.angular_velocity.z])
-        elif topic == "/odrive_feedback":
-            entries["odrive_feedback"][full_ts] = np.array([msg.motor_vel_actual_0,
-                                                            msg.motor_vel_actual_1,
-                                                            msg.motor_vel_cmd_0,
-                                                            msg.motor_vel_cmd_1])
-        elif topic == "/vbus":
-            entries["vbus"][full_ts] = np.array([msg.data])
-        else:
-            raise KeyError("Unexpected rosbag topic")
-
-    interpolated = interpolate_events(entries["yolo_intermediate"], [entries[key] for key in DATAFRAME_COLUMNS[1:]],
-                                      max_gap_ns=1000 * 1000 * 1000)
-
-    df = pd.DataFrame.from_records([[ts, event, *interps] for (ts, event, interps) in interpolated],
-                                    columns=["ts", *DATAFRAME_COLUMNS], index="ts")
-
-    # Convert from pandas to Arrow
-    table = pa.Table.from_pandas(df)
-
-    # Write out to file
-    with pa.OSFile(bag_cache_path, 'wb') as sink:
-        with pa.RecordBatchFileWriter(sink, table.schema) as writer:
-            writer.write_table(table)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -295,8 +81,13 @@ if __name__ == '__main__':
     start_load = time.perf_counter()
     all_entries = None
 
-    for bag_path in glob.glob(os.path.join(opt.bag_dir, "*.bag")):
-        entries = read_bag(bag_path, opt.onnx, opt.reward,
+    loaded_bags = set(glob.glob(os.path.join(opt.bag_dir, "*.bag")))
+    for bag_path in loaded_bags:
+        entries = read_bag(bag_path,
+                           backbone_onnx_path=opt.onnx,
+                           cache_dir=opt.cache_dir,
+                           camera_topic=opt.camera_topic,
+                           reward_func_name=opt.reward,
                            reward_delay_ms=opt.reward_delay_ms,
                            punish_backtrack_ms=opt.punish_backtrack_ms)
 
@@ -326,21 +117,9 @@ if __name__ == '__main__':
 
     env = env_fn()
 
-    def normalize_pantilt(pantilt):
-        return env.normalize_pan(pantilt[0, np.newaxis]), env.normalize_tilt(pantilt[1, np.newaxis])
-
-    def make_observation(interpolated_entry):
-        pan_curr, tilt_curr = normalize_pantilt(interpolated_entry.dynamixel_cur_state)
-        return np.concatenate([pan_curr, tilt_curr,
-                               interpolated_entry.head_gyro / 10.0,  # Divide radians/sec by ten to center around 0 closer
-                               interpolated_entry.head_accel / 10.0,  # Divide m/s by 10, and center the y axis
-                               interpolated_entry.odrive_feedback[0:2],  # Only the actual vel, not the commanded vel
-                               interpolated_entry.vbus - 27.0,  # Volts different from ~50% charge
-                               interpolated_entry.yolo_intermediate[::backbone_slice]])
-
     example_entry = all_entries.iloc[0]
     backbone_data_size = example_entry.yolo_intermediate[::backbone_slice].shape[0]
-    example_observation = make_observation(example_entry)
+    example_observation = make_observation(env, example_entry, opt.backbone_slice)
     dropout = SplitDropout([example_observation.shape[0]-backbone_data_size, backbone_data_size],
                            [0.05, opt.dropout])
     sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=dropout,
@@ -348,97 +127,10 @@ if __name__ == '__main__':
                           ac_kwargs=actor_critic_args,
                           replay_buffer_factory=replay_buffer_factory)
 
-    num_samples = min(len(all_entries)-1, opt.max_samples)
-
-    used = [False for _ in range(num_samples + 1)]
-
-    nans = 0
-    oobs = 0
-    dones = 0
-
-    def ts_from_seconds(seconds):
-        return int(seconds * 1000000000)
-
-    MIN_TS_DIFF = ts_from_seconds(0.47)
-    MAX_TS_DIFF = ts_from_seconds(0.75)
-
-    t = tqdm(total=num_samples)
-    loaded = 0
-
-    threads = 0
-    while not all(used[:-1]):
-        threads += 1
-        last_terminated = False
-        lstm_history_count = 0
-        last_ts = None
-        i = 0
-        while i < num_samples:
-            if used[i]:
-                i += 1
-                continue
-
-            used[i] = True
-            loaded += 1
-            t.update()
-
-            entry = all_entries.iloc[i]
-            ts = entry.name
-            i += 1
-            while i < num_samples and (all_entries.iloc[i].name < ts + MIN_TS_DIFF or used[i]):
-                i += 1
-            if i >= num_samples:
-                continue
-            next_entry = all_entries.iloc[i]
-            if next_entry.name >= ts + MAX_TS_DIFF:
-                lstm_history_count = 0
-                continue
-
-            if lstm_history_count >= opt.lstm_history:
-                lstm_history_count -= 1
-
-            pan_command, tilt_command = normalize_pantilt(entry.dynamixel_command_state)
-            pan_curr, tilt_curr = normalize_pantilt(entry.dynamixel_cur_state)
-
-            move_penalty = abs(entry.cmd_vel).mean() * 0.002
-            pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.001)
-            if move_penalty + pantilt_penalty > 10:
-                print("WARNING: high move penalty!")
-            reward = entry.reward
-            reward -= move_penalty + pantilt_penalty
-            reward += next_entry.punishment * DEFAULT_PUNISHMENT_MULTIPLIER
-
-            obs = make_observation(entry)
-            future_obs = make_observation(next_entry)
-            lstm_history_count += 1
-
-            if np.isnan(obs).any() or np.isnan(future_obs).any() or np.isnan(reward).any():
-                nans += 1
-                continue
-
-            if obs.max() > 1000 or future_obs.max() > 1000:
-                oobs += 1
-                continue
-
-            terminated = next_entry.punishment < -0.0
-            if terminated and last_terminated:
-                continue
-            last_terminated = terminated
-            if terminated:
-                dones += 1
-
-            sac.replay_buffer.store(obs=obs,
-                act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
-                rew=reward,
-                next_obs=future_obs,
-                lstm_history_count=lstm_history_count,
-                done=terminated)
-
-    t.close()
+    load_entries(all_entries, sac.replay_buffer, env, opt.backbone_slice)
 
     print("filled in replay buffer")
     print(f"Took {time.perf_counter() - start_load}")
-    print(f"NaNs in {nans} of {num_samples} samples, large obs in {oobs}, threads: {threads}")
-    print(f"avg. episode len: {(num_samples + 1) / (dones + 1)}")
 
     resume_dict = sac.load(opt.checkpoint_path) if os.path.exists(opt.checkpoint_path) else None
 

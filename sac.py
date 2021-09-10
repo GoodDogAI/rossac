@@ -43,6 +43,9 @@ class ReplayBuffer:
                      done=self.done_buf[idxs])
         return {k: torch.as_tensor(v, dtype=torch.float32) for k, v in batch.items()}
 
+    def __len__():
+        return self.size
+
 class TorchReplayBuffer:
     def __init__(self, obs_dim, act_dim, size, device=None):
         self.device = device
@@ -74,6 +77,9 @@ class TorchReplayBuffer:
                      rew=self.rew_buf[idxs],
                      done=self.done_buf[idxs])
         return batch
+
+    def __len__(self):
+        return self.size
 
 
 class TorchLSTMReplayBuffer:
@@ -139,6 +145,9 @@ class TorchLSTMReplayBuffer:
                      lstm_history=lstm_history,
                      done=self.done_buf[idxs])
         return batch
+
+    def __len__(self):
+        return self.size
 
 class SoftActorCritic:
     def __init__(self, env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(),
