@@ -17,7 +17,7 @@ import tensorflow.compat.v1 as tf
 
 from bot_env import RobotEnvironment, NormalizedRobotEnvironment
 from actor_critic.core import MLPActorCritic
-from bag_cache import read_bag
+from bag_cache import read_bags
 from replay_loader import load_entries, make_observation
 from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic, TorchLSTMReplayBuffer
 from split_dropout import SplitDropout
@@ -79,23 +79,8 @@ if __name__ == '__main__':
         os.makedirs(cache_dir)
 
     start_load = time.perf_counter()
-    all_entries = None
-
     loaded_bags = set(glob.glob(os.path.join(opt.bag_dir, "*.bag")))
-    for bag_path in loaded_bags:
-        entries = read_bag(bag_path,
-                           backbone_onnx_path=opt.onnx,
-                           cache_dir=opt.cache_dir,
-                           camera_topic=opt.camera_topic,
-                           reward_func_name=opt.reward,
-                           reward_delay_ms=opt.reward_delay_ms,
-                           punish_backtrack_ms=opt.punish_backtrack_ms)
-
-        if all_entries is None:
-            all_entries = entries
-        else:
-            all_entries = all_entries.append(entries)
-
+    all_entries = read_bags(loaded_bags)
     print(f"Loaded {len(all_entries)} base entries")
 
     backbone_slice = opt.backbone_slice
@@ -265,6 +250,15 @@ if __name__ == '__main__':
             print(f"avg. time per step: {(time.perf_counter() - epoch_start)/steps_per_epoch}s")
             print()
             epoch_start = time.perf_counter()
-        
+
+            new_bags = set(glob.glob(os.path.join(opt.bag_dir, "*.bag"))) - loaded_bags
+            all_entries = read_bags(loaded_bags)
+            print(f"Loaded {len(all_entries)} base entries")
+
+            load_entries(all_entries, sac.replay_buffer, env, opt.backbone_slice)
+
+            loaded_bags |= new_bags
+
+
         i += 1
         sac.logger.epoch_dict.clear()  # Reset the log buffer, otherwise it would retain data from all steps

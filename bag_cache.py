@@ -43,6 +43,25 @@ DATAFRAME_COLUMNS = [
     "punishment",
 ]
 
+def read_bags(bag_paths):
+    all_entries = None
+    
+    for bag_path in bag_paths:
+        entries = read_bag(bag_path,
+                           backbone_onnx_path=opt.onnx,
+                           cache_dir=opt.cache_dir,
+                           camera_topic=opt.camera_topic,
+                           reward_func_name=opt.reward,
+                           reward_delay_ms=opt.reward_delay_ms,
+                           punish_backtrack_ms=opt.punish_backtrack_ms)
+
+        if entries is None:
+            all_entries = entries
+        else:
+            all_entries = all_entries.append(entries)
+
+    return all_entries
+
 def read_bag(bag_file: str, backbone_onnx_path: str,
              cache_dir: str,
              camera_topic: str,
