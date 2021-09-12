@@ -29,7 +29,7 @@ from actor_critic.core import MLPActorCritic
 from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic, TorchLSTMReplayBuffer
 import yolo_reward
 from split_dropout import SplitDropout
-from yolo_reward import get_prediction, get_intermediate_layer
+from yolo_reward import get_onnx_prediction, get_intermediate_layer
 from dump_onnx import export
 
 DEFAULT_MAX_GAP_SECONDS = 5
@@ -196,7 +196,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
 
             # Convert list of byte arrays to numpy array
             image_np = np.array(img)
-            pred = get_prediction(get_onnx_sess(backbone_onnx_path), image_np)
+            pred = get_onnx_prediction(get_onnx_sess(backbone_onnx_path), image_np)
             intermediate = get_intermediate_layer(pred)
             reward = reward_func(pred)
 

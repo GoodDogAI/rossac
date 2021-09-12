@@ -12,9 +12,9 @@ import png
 
 input_binding_name = "images"
 
-# Get these from exploring your ONNX file, the first three are the three yolo-kernel result layers, the final entry
-# is the intermediate layer to be passed into SAC
-output_binding_names = ["output", "427", "446", "300"]
+# Get these from exploring your ONNX file, the first one should be the classifications, all concatenated together
+# The second one should be your intermediate output layer
+output_binding_names = ["output", "361"]
 
 # YOLO Specific parameters
 input_h = 480
@@ -122,7 +122,7 @@ def sum_centered_objects_present_weighted_closer(pred: List[np.ndarray]) -> floa
            centered_objects_present(pred[2], yolo3) * 0.9
 
 
-def get_prediction(sess: rt.InferenceSession, image_np: np.ndarray) -> List[np.ndarray]:
+def convert_wh_to_nchw(image_np: np.ndarray) -> np.ndarray:
     # First shape it into the 1xWxHx1 format
     # Go from (H, W) to (1, H, W, 1)
     image_np = np.expand_dims(image_np, 0)
@@ -140,6 +140,12 @@ def get_prediction(sess: rt.InferenceSession, image_np: np.ndarray) -> List[np.n
     image_np = image_np / 255.0
     image_np = image_np.astype(np.float32)
 
+    return image_np
+
+
+def get_onnx_prediction(sess: rt.InferenceSession, image_np: np.ndarray) -> List[np.ndarray]:
+    image_np = convert_wh_to_nchw(image_np)
+
     pred = sess.run(output_binding_names, {
         input_binding_name: image_np
     })
@@ -148,11 +154,5 @@ def get_prediction(sess: rt.InferenceSession, image_np: np.ndarray) -> List[np.n
 
 
 def get_intermediate_layer(pred: List[np.ndarray]) -> np.ndarray:
-    return pred[3]
+    return pred[1]
 
-
-if __name__ == "__main__":
-    sess = rt.InferenceSession("C:\\Users\jakep\Desktop\yolov5s.onnx")
-    pred = get_prediction(sess, Path("imgs", "1598832182944358229.png"))
-    reward = get_reward(pred)
-    print(f"Reward: {reward}")
