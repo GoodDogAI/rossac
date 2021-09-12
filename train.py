@@ -135,15 +135,19 @@ DATAFRAME_COLUMNS = [
 
 
 def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
-            reward_delay_ms: int, punish_backtrack_ms: int) -> pd.DataFrame:
+             interpolation_slice: int,
+             reward_delay_ms: int,
+             punish_backtrack_ms: int) -> pd.DataFrame:
     print(f"Opening {bag_file}")
-    bag_cache_name = os.path.join(opt.cache_dir, f"{os.path.basename(bag_file)}_{reward_func_name}_+{reward_delay_ms}ms_-{punish_backtrack_ms}ms.arrow")
+    bag_cache_name = os.path.join(opt.cache_dir, f"{os.path.basename(bag_file)}_{reward_func_name}_{interpolation_slice}slice+{reward_delay_ms}ms_-{punish_backtrack_ms}ms.arrow")
 
     try:
         return _read_mmapped_bag(bag_cache_name)
     except IOError:
         write_bag_cache(bag_file, bag_cache_name, backbone_onnx_path, reward_func_name,
-                        reward_delay_ms=reward_delay_ms, punish_backtrack_ms=punish_backtrack_ms)
+                        interpolation_slice=interpolation_slice,
+                        reward_delay_ms=reward_delay_ms,
+                        punish_backtrack_ms=punish_backtrack_ms)
         return _read_mmapped_bag(bag_cache_name)
 
 
@@ -154,7 +158,9 @@ def _read_mmapped_bag(bag_cache_name: str) -> pd.DataFrame:
 
 
 def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str,
-                    reward_delay_ms: int, punish_backtrack_ms: int):
+                    interpolation_slice: int,
+                    reward_delay_ms: int,
+                    punish_backtrack_ms: int):
     bag = rosbag.Bag(bag_file, 'r')
     entries = defaultdict(dict)
     reward_func = getattr(yolo_reward, reward_func_name)
@@ -200,7 +206,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
                 png.from_array(img, mode=img_mode).save(os.path.join(opt.cache_dir, f"error_{os.path.basename(bag_file)}_{ts}.png"))
                 continue
 
-            entries["yolo_intermediate"][full_ts] = _flatten(intermediate)
+            entries["yolo_intermediate"][full_ts] = _flatten(intermediate)[::interpolation_slice]
             entries["reward"][full_ts + reward_delay_ms * 1000000] = reward
         elif topic == '/reward_button':
             entries["punishment"][full_ts + punish_backtrack_ms * 1000000] = np.array([msg.data])
@@ -289,6 +295,8 @@ if __name__ == '__main__':
     torch.manual_seed(opt.seed)
     np.random.seed(opt.seed)
 
+    backbone_slice = opt.backbone_slice
+
     cache_dir = opt.cache_dir or os.path.join(opt.bag_dir, "_cache")
     opt.cache_dir = cache_dir
     if not os.path.exists(cache_dir):
@@ -299,6 +307,7 @@ if __name__ == '__main__':
 
     for bag_path in glob.glob(os.path.join(opt.bag_dir, "*.bag")):
         entries = read_bag(bag_path, opt.onnx, opt.reward,
+                           interpolation_slice=backbone_slice,
                            reward_delay_ms=opt.reward_delay_ms,
                            punish_backtrack_ms=opt.punish_backtrack_ms)
 
@@ -308,8 +317,6 @@ if __name__ == '__main__':
             all_entries = all_entries.append(entries)
 
     print(f"Loaded {len(all_entries)} base entries")
-
-    backbone_slice = opt.backbone_slice
     env_fn = lambda: NormalizedRobotEnvironment(slice=backbone_slice)
     replay_buffer_factory = ReplayBuffer
     if opt.lstm_history:
@@ -343,10 +350,10 @@ if __name__ == '__main__':
                                interpolated_entry.head_accel / 10.0,  # Divide m/s by 10, and center the y axis
                                interpolated_entry.odrive_feedback[0:2],  # Only the actual vel, not the commanded vel
                                interpolated_entry.vbus - 27.0,  # Volts different from ~50% charge
-                               interpolated_entry.yolo_intermediate[::backbone_slice]])
+                               interpolated_entry.yolo_intermediate])
 
     example_entry = all_entries.iloc[0]
-    backbone_data_size = example_entry.yolo_intermediate[::backbone_slice].shape[0]
+    backbone_data_size = example_entry.yolo_intermediate.shape[0]
     example_observation = make_observation(example_entry)
     dropout = SplitDropout([example_observation.shape[0]-backbone_data_size, backbone_data_size],
                            [0.05, opt.dropout])
