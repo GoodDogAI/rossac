@@ -32,7 +32,12 @@ class TestYoloExport(unittest.TestCase):
         pt_sess = torch.jit.load(self.pt_path)
         pt_pred = pt_sess(torch.from_numpy(convert_wh_to_nchw(self.image_np)))
 
+        gpu_device = torch.device("cuda")
+        pt_gpu_sess = torch.jit.load(self.pt_path, gpu_device)
+        pt_gpu_pred = pt_gpu_sess(torch.from_numpy(convert_wh_to_nchw(self.image_np)).to(gpu_device))
+
         np.testing.assert_almost_equal(onnx_pred[0], pt_pred[0].numpy(), decimal=2)
+        np.testing.assert_almost_equal(onnx_pred[0], pt_gpu_pred[0].cpu().numpy(), decimal=2)
 
     def testChairPerson(self):
         onnx_sess = rt.InferenceSession(self.onnx_path)
