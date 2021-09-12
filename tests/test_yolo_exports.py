@@ -1,4 +1,6 @@
 import unittest
+from math import sqrt
+
 import torch
 import numpy as np
 import os
@@ -40,3 +42,7 @@ class TestYoloExport(unittest.TestCase):
 
         # There should be at least one person and one chair in this image
         self.assertEqual(set(b.class_name for b in boxes), {"person", "chair"})
+
+        # All detections should be in lower left corner
+        for box in boxes:
+            self.assertLess(sqrt((box.x - 50) ** 2 + (box.y - 356) ** 2), 100)
