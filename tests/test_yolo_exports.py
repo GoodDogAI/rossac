@@ -9,7 +9,7 @@ import onnxruntime as rt
 
 from train import get_onnx_sess
 from yolo_reward import get_onnx_prediction, get_intermediate_layer, convert_wh_to_nchw
-from yolo_reward import detect_yolo_bboxes, yolo1, yolo2, yolo3
+from yolo_reward import detect_yolo_bboxes
 
 
 class TestYoloExport(unittest.TestCase):
@@ -32,11 +32,11 @@ class TestYoloExport(unittest.TestCase):
 
         np.testing.assert_almost_equal(onnx_pred[0], pt_pred[0].numpy(), decimal=2)
 
-    # def testChairPerson(self):
-    #     pred = get_prediction(get_onnx_sess(os.path.join(os.path.dirname(__file__), "..", "yolov5s_trt.onnx")), self.image_np)
-    #     intermediate = get_intermediate_layer(pred)
-    #     boxes = detect_yolo_bboxes(pred[0], yolo1)
-    #
-    #     # There should be at least one person in this image
-    #     # TODO: Latest yolo builds detect 1 person and 1 chair, but we are not using those checkpoints
-    #     self.assertTrue(any(b.class_name == "person" for b in boxes))
+    def testChairPerson(self):
+        onnx_sess = rt.InferenceSession(self.onnx_path)
+        pred = get_onnx_prediction(onnx_sess, self.image_np)
+
+        boxes = detect_yolo_bboxes(pred[0])
+
+        # There should be at least one person and one chair in this image
+        self.assertEqual(set(b.class_name for b in boxes), {"person", "chair"})
