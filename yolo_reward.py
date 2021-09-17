@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 import onnxruntime as rt
 import torchvision
+
 import torch
 
 input_binding_name = "images"
@@ -75,10 +76,20 @@ def detect_yolo_bboxes(final_detections: np.ndarray) -> List[BBox]:
     return boxes
 
 
-def non_max_supression(yolo_bboxes: np.ndarray) -> np.ndarray:
-    boxes = torchvision.ops.box_conver(yolo_bboxes[..., 0:4], in_fmt="cxcywh", out_fms="xyxy")
+def non_max_supression(yolo_bboxes: np.ndarray, iou_threshold: float = 0.50) -> np.ndarray:
+    assert yolo_bboxes.shape[0] == 1, "This operation cannot be batched"
 
-    return boxes
+    yolo_bboxes = torch.from_numpy(yolo_bboxes)[0]
+
+    boxes = torchvision.ops.box_convert(yolo_bboxes[..., 0:4], in_fmt="cxcywh", out_fmt="xyxy")
+    scores = yolo_bboxes[..., 4] * torch.amax(yolo_bboxes[..., 5:], dim=-1)
+
+    # Remove boxes that are below some low threshold
+    confidence_filter_mask = scores > 0.10
+    boxes = boxes[confidence_filter_mask]
+    scores = scores[confidence_filter_mask]
+
+    return torchvision.ops.nms(boxes, scores, iou_threshold=iou_threshold).numpy()
 
 
 def _all_centers(bboxes: np.ndarray) -> np.ndarray:

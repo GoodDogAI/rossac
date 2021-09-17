@@ -11,7 +11,7 @@ import onnxruntime as rt
 
 from train import get_onnx_sess
 from yolo_reward import get_onnx_prediction, get_intermediate_layer, convert_wh_to_nchw, get_pt_gpu_prediction, \
-    sum_centered_objects_present, prioritize_centered_objects
+    sum_centered_objects_present, prioritize_centered_objects, non_max_supression
 from yolo_reward import detect_yolo_bboxes
 
 
@@ -77,5 +77,11 @@ class TestYoloReward(unittest.TestCase):
 
         self.assertGreater(reward_scaled, reward)
 
+    def test_nms(self):
+        image_np = self._load_image_np(
+            os.path.join(os.path.dirname(__file__), "test_data", "chair_person.png"))
+        bboxes, intermediate = get_onnx_prediction(self.onnx_sess, image_np)
+
+        non_max_supression(bboxes)
 
 
