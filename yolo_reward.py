@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 import onnxruntime as rt
 import png
-
+import torch
 
 input_binding_name = "images"
 
@@ -102,19 +102,11 @@ def sum_centered_objects_present(pred: List[np.ndarray]) -> float:
     #              detect_yolo_bboxes(pred[2], yolo3)
     #print(all_bboxes)
 
-    return centered_objects_present(pred[0], yolo1) + \
-           centered_objects_present(pred[1], yolo2) + \
-           centered_objects_present(pred[2], yolo3)
-
-def sum_centered_objects_present_weighted_closer(pred: List[np.ndarray]) -> float:
-    # all_bboxes = detect_yolo_bboxes(pred[0], yolo1) + \
-    #              detect_yolo_bboxes(pred[1], yolo2) + \
-    #              detect_yolo_bboxes(pred[2], yolo3)
-    #print(all_bboxes)
-
-    return centered_objects_present(pred[0], yolo1) * 0.1 + \
-           centered_objects_present(pred[1], yolo2) * 0.5 + \
-           centered_objects_present(pred[2], yolo3) * 0.9
+    # TODO, readjust the calculations based on the new bounding boxes
+    # return centered_objects_present(pred[0], yolo1) + \
+    #        centered_objects_present(pred[1], yolo2) + \
+    #        centered_objects_present(pred[2], yolo3)
+    return 0.0
 
 
 def convert_wh_to_nchw(image_np: np.ndarray) -> np.ndarray:
@@ -148,6 +140,15 @@ def get_onnx_prediction(sess: rt.InferenceSession, image_np: np.ndarray) -> List
     return pred
 
 
+def get_pt_gpu_prediction(pt: torch.ScriptModule, image_np: np.ndarray) -> List[np.ndarray]:
+    image_np = torch.from_numpy(convert_wh_to_nchw(image_np))
+
+    device = torch.device("cuda")
+    pred = pt(image_np.to(device))
+    pred = pred[0].cpu().numpy()
+
+    return pred
+
+
 def get_intermediate_layer(pred: List[np.ndarray]) -> np.ndarray:
     return pred[1]
-

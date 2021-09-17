@@ -254,7 +254,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--bag-dir', type=str, help='directory with bag files to use for training data')
-    parser.add_argument("--onnx", type=str, default='./yolov5s.onnx', help='onnx weights path for intermediate stage')
+    parser.add_argument("--onnx", type=str, default='./yolov5s_trt.onnx', help='onnx weights path for intermediate stage')
     parser.add_argument("--camera_topic", default='/camera/infra2/image_rect_raw')
     parser.add_argument("--reward", default='sum_centered_objects_present')
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
