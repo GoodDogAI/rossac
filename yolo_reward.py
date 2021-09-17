@@ -73,40 +73,36 @@ def detect_yolo_bboxes(final_detections: np.ndarray) -> List[BBox]:
     return boxes
 
 
-def any_objects_present(prediction: np.ndarray) -> float:
-    prediction = 1 / (1 + np.exp(-prediction))
+def sum_centered_objects_present(pred: List[np.ndarray]) -> float:
+    bboxes, intermediate = pred
 
-    all_probs = np.expand_dims(prediction[..., 4], -1) * prediction[..., 5:]
-
-    return np.sum(all_probs) / 50.0
-
-
-def centered_objects_present(prediction: np.ndarray) -> float:
-    prediction = 1 / (1 + np.exp(-prediction))
-    all_probs = prediction[..., 4] * np.amax(prediction[..., 5:], axis=-1)
-
-    xgrid = np.arange(prediction.shape[3]).reshape((1, 1, 1, -1))
-    all_xs = (xgrid - 0.5 + 2 * prediction[..., 0]) * input_w / kernel.width
-
-    ygrid = np.arange(prediction.shape[2]).reshape((1,1,-1,1))
-    all_ys = (ygrid - 0.5 + 2 * prediction[..., 1]) * input_h / kernel.height
-
-    all_centers = np.sqrt((all_xs - input_w / 2) ** 2 + (all_ys - input_h / 2) ** 2)
+    all_probs = bboxes[..., 4] * np.amax(bboxes[..., 5:], axis=-1)
+    all_centers = np.sqrt(((bboxes[..., 0] - input_w / 2) / input_w) ** 2 +
+                          ((bboxes[..., 1] - input_h / 2) / input_h) ** 2) + 0.1 # Small constant to prevent divide by zero explosion
 
     return np.sum(all_probs / all_centers)
 
 
-def sum_centered_objects_present(pred: List[np.ndarray]) -> float:
-    # all_bboxes = detect_yolo_bboxes(pred[0], yolo1) + \
-    #              detect_yolo_bboxes(pred[1], yolo2) + \
-    #              detect_yolo_bboxes(pred[2], yolo3)
-    #print(all_bboxes)
+def prioritize_centered_spoons(pred: List[np.ndarray]) -> float:
+    return prioritize_centered_objects(pred, class_weights={
+        "person": 3,
+        "spoon": 10,
+    })
 
-    # TODO, readjust the calculations based on the new bounding boxes
-    # return centered_objects_present(pred[0], yolo1) + \
-    #        centered_objects_present(pred[1], yolo2) + \
-    #        centered_objects_present(pred[2], yolo3)
-    return 0.0
+
+def prioritize_centered_objects(pred: List[np.ndarray], class_weights: dict) -> float:
+    bboxes, intermediate = pred
+
+    all_probs = bboxes[..., 4] * np.amax(bboxes[..., 5:], axis=-1)
+    all_centers = np.sqrt((bboxes[..., 0] - input_w / 2) ** 2 + (bboxes[..., 1] - input_h / 2) ** 2)
+
+    classes = np.argmax(bboxes[..., 5:], axis=-1)
+    factors = np.ones_like(all_probs)
+
+    for (cls, factor) in class_weights.items():
+        factors *= np.where(classes == class_names.index(cls), factor, 1.0)
+
+    return np.sum((all_probs * factors) / all_centers)
 
 
 def convert_wh_to_nchw(image_np: np.ndarray) -> np.ndarray:
