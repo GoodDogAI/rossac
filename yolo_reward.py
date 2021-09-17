@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import onnxruntime as rt
-import png
+import torchvision
 import torch
 
 input_binding_name = "images"
@@ -20,6 +20,8 @@ output_binding_names = ["output", "361"]
 input_h = 480
 input_w = 640
 class_num = 80
+
+GLOBAL_REWARD_SCALE = 0.01
 
 class_names = ["person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign",
   "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack",
@@ -73,14 +75,24 @@ def detect_yolo_bboxes(final_detections: np.ndarray) -> List[BBox]:
     return boxes
 
 
+def non_max_supression(yolo_bboxes: np.ndarray) -> np.ndarray:
+    boxes = torchvision.ops.box_conver(yolo_bboxes[..., 0:4], in_fmt="cxcywh", out_fms="xyxy")
+
+    return boxes
+
+
+def _all_centers(bboxes: np.ndarray) -> np.ndarray:
+    return np.sqrt(((bboxes[..., 0] - input_w / 2) / input_w) ** 2 +
+                  ((bboxes[ ..., 1] - input_h / 2) / input_h) ** 2) + 0.1  # Small constant to prevent divide by zero explosion
+
+
 def sum_centered_objects_present(pred: List[np.ndarray]) -> float:
     bboxes, intermediate = pred
 
     all_probs = bboxes[..., 4] * np.amax(bboxes[..., 5:], axis=-1)
-    all_centers = np.sqrt(((bboxes[..., 0] - input_w / 2) / input_w) ** 2 +
-                          ((bboxes[..., 1] - input_h / 2) / input_h) ** 2) + 0.1 # Small constant to prevent divide by zero explosion
+    all_centers = _all_centers(bboxes)
 
-    return np.sum(all_probs / all_centers)
+    return np.sum(all_probs / all_centers) * GLOBAL_REWARD_SCALE
 
 
 def prioritize_centered_spoons(pred: List[np.ndarray]) -> float:
@@ -94,7 +106,7 @@ def prioritize_centered_objects(pred: List[np.ndarray], class_weights: dict) -> 
     bboxes, intermediate = pred
 
     all_probs = bboxes[..., 4] * np.amax(bboxes[..., 5:], axis=-1)
-    all_centers = np.sqrt((bboxes[..., 0] - input_w / 2) ** 2 + (bboxes[..., 1] - input_h / 2) ** 2)
+    all_centers = _all_centers(bboxes)
 
     classes = np.argmax(bboxes[..., 5:], axis=-1)
     factors = np.ones_like(all_probs)
@@ -102,7 +114,7 @@ def prioritize_centered_objects(pred: List[np.ndarray], class_weights: dict) -> 
     for (cls, factor) in class_weights.items():
         factors *= np.where(classes == class_names.index(cls), factor, 1.0)
 
-    return np.sum((all_probs * factors) / all_centers)
+    return np.sum((all_probs * factors) / all_centers) * GLOBAL_REWARD_SCALE
 
 
 def convert_wh_to_nchw(image_np: np.ndarray) -> np.ndarray:

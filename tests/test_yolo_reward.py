@@ -68,11 +68,14 @@ class TestYoloReward(unittest.TestCase):
         self.assertLess(abs(reward - reward_flip_lr), 1.0)
 
     def test_prioritize_centered_objects(self):
-        pred = get_onnx_prediction(self.onnx_sess, self.image_np)
+        image_np = self._load_image_np(
+            os.path.join(os.path.dirname(__file__), "test_data", "chair_person.png"))
+        pred = get_onnx_prediction(self.onnx_sess, image_np)
         reward = sum_centered_objects_present(pred)
         reward_scaled = prioritize_centered_objects(pred, {"person": 10,
                                                            "chair": 10})
 
         self.assertGreater(reward_scaled, reward)
+
 
 
