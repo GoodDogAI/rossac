@@ -102,6 +102,9 @@ class TorchLSTMReplayBuffer:
             if lstm_history_count <= 0:
                 raise RuntimeError("LSTM History count should be at least 1 (meaning that the current entry is the only one shown)")
 
+            if lstm_history_count > self.history_size:
+                raise RuntimeError("You can't store an entry with more history than you will be requesting")
+
             self.obs_buf[self.ptr] = torch.as_tensor(obs, device=self.device)
             self.obs2_buf[self.ptr] = torch.as_tensor(next_obs, device=self.device)
             self.act_buf[self.ptr] = torch.as_tensor(act, device=self.device)
