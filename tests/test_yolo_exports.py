@@ -24,7 +24,7 @@ def get_pt_gpu_prediction(pt: torch.ScriptModule, image_np: np.ndarray) -> np.nd
 
 
 class TestYoloExport(unittest.TestCase):
-    onnx_path = os.path.join(os.path.dirname(__file__), "..", "yolov5s_trt.onnx")
+    onnx_path = os.path.join(os.path.dirname(__file__), "..", "yolov5s_v5_0_op11_rossac.onnx")
     pt_path = os.path.join(os.path.dirname(__file__), "..", "yolov5s.torchscript.pt")
 
     def setUp(self) -> None:
