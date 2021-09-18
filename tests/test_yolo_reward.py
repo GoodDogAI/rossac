@@ -1,7 +1,4 @@
 import unittest
-from math import sqrt
-
-import torch
 import numpy as np
 import os
 
@@ -9,9 +6,7 @@ import png
 import onnxruntime as rt
 
 
-from train import get_onnx_sess
-from yolo_reward import get_onnx_prediction, get_intermediate_layer, convert_wh_to_nchw, get_pt_gpu_prediction, \
-    sum_centered_objects_present, prioritize_centered_objects, non_max_supression
+from yolo_reward import get_onnx_prediction, sum_centered_objects_present, prioritize_centered_objects, non_max_supression
 from yolo_reward import detect_yolo_bboxes
 
 

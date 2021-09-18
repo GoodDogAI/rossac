@@ -9,9 +9,18 @@ import png
 import onnxruntime as rt
 
 
-from train import get_onnx_sess
-from yolo_reward import get_onnx_prediction, get_intermediate_layer, convert_wh_to_nchw, get_pt_gpu_prediction
+from yolo_reward import get_onnx_prediction, convert_wh_to_nchw
 from yolo_reward import detect_yolo_bboxes
+
+
+def get_pt_gpu_prediction(pt: torch.ScriptModule, image_np: np.ndarray) -> np.ndarray:
+    image_np = torch.from_numpy(convert_wh_to_nchw(image_np))
+
+    device = torch.device("cuda")
+    pred = pt(image_np.to(device))
+    pred = pred[0].cpu().numpy()
+
+    return pred
 
 
 class TestYoloExport(unittest.TestCase):
@@ -25,7 +34,7 @@ class TestYoloExport(unittest.TestCase):
         image_np = image_np[..., 0]
         self.image_np = image_np
 
-    def testOnnxAndPTLineUp(self):
+    def testOnnxAndPTMatch(self):
         onnx_sess = rt.InferenceSession(self.onnx_path)
         onnx_pred = get_onnx_prediction(onnx_sess, self.image_np)
 

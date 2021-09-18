@@ -160,18 +160,6 @@ def get_onnx_prediction(sess: rt.InferenceSession, image_np: np.ndarray) -> List
         input_binding_name: image_np
     })
 
+    # Returns (detections, intermediate_layer)
     return pred
 
-
-def get_pt_gpu_prediction(pt: torch.ScriptModule, image_np: np.ndarray) -> List[np.ndarray]:
-    image_np = torch.from_numpy(convert_wh_to_nchw(image_np))
-
-    device = torch.device("cuda")
-    pred = pt(image_np.to(device))
-    pred = pred[0].cpu().numpy()
-
-    return pred
-
-
-def get_intermediate_layer(pred: List[np.ndarray]) -> np.ndarray:
-    return pred[1]
