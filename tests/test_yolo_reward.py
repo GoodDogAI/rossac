@@ -82,6 +82,21 @@ class TestYoloReward(unittest.TestCase):
             os.path.join(os.path.dirname(__file__), "test_data", "chair_person.png"))
         bboxes, intermediate = get_onnx_prediction(self.onnx_sess, image_np)
 
-        non_max_supression(bboxes)
+        nms_boxes = non_max_supression(bboxes)
+        detections = detect_yolo_bboxes(nms_boxes)
+
+        self.assertEqual(len(detections), 2)
+
+        self.assertEqual(detections[0].class_name, "chair")
+        self.assertAlmostEqual(detections[0].x, 5, delta=1.0)
+        self.assertAlmostEqual(detections[0].y, 395, delta=1.0)
+        self.assertAlmostEqual(detections[0].width, 103, delta=1.0)
+        self.assertAlmostEqual(detections[0].height, 85, delta=1.0)
+
+        self.assertEqual(detections[1].class_name, "person")
+        self.assertAlmostEqual(detections[1].x, 1, delta=1.0)
+        self.assertAlmostEqual(detections[1].y, 276, delta=1.0)
+        self.assertAlmostEqual(detections[1].width, 82, delta=1.0)
+        self.assertAlmostEqual(detections[1].height, 174, delta=1.0)
 
 
