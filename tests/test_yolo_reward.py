@@ -73,7 +73,7 @@ class TestYoloReward(unittest.TestCase):
         reward_scaled = prioritize_centered_objects(bboxes, {"person": 10,
                                                              "chair": 10})
 
-        self.assertAlmostEqual(reward_scaled, reward * 10)
+        self.assertAlmostEqual(reward_scaled, reward * 10, places=5)
 
     def test_nms(self):
         image_np = self._load_image_np(
