@@ -267,7 +267,7 @@ if __name__ == '__main__':
     parser.add_argument('--cache-dir', type=str, default=None, help='directory to store precomputed values')
     parser.add_argument('--epoch-steps', type=int, default=100, help='how often to save checkpoints')
     parser.add_argument('--seed', type=int, default=None, help='training seed')
-    parser.add_argument('--lstm-history', type=int, default=5, help='max amount of prior steps to feed into a network history')
+    parser.add_argument('--max-lookback', type=int, default=5, help='max amount of prior steps to feed into a network history')
     parser.add_argument('--history-indexes', type=str, default='-1,-2,-3,-5', help='which indexes to pass into the network')
     parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
     parser.add_argument('--no-mixed-precision', default=False, action="store_true", help='use full precision for training')
@@ -316,9 +316,9 @@ if __name__ == '__main__':
     print(f"Loaded {len(all_entries)} base entries")
     env_fn = lambda: NormalizedRobotEnvironment(slice=backbone_slice)
     replay_buffer_factory = ReplayBuffer
-    if opt.lstm_history:
+    if opt.max_lookback:
         replay_buffer_factory = lambda obs_dim, act_dim, size: TorchLSTMReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
-                                                                                     size=size, device=device, history_size=opt.lstm_history)
+                                                                                     size=size, device=device, history_size=opt.max_lookback)
     else:
         replay_buffer_factory = lambda obs_dim, act_dim, size: TorchReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
                                                                                  size=size, device=device)
@@ -404,7 +404,7 @@ if __name__ == '__main__':
                 lstm_history_count = 0
                 continue
 
-            if lstm_history_count >= opt.lstm_history:
+            if lstm_history_count >= opt.max_lookback:
                 lstm_history_count -= 1
 
             pan_command, tilt_command = normalize_pantilt(entry.dynamixel_command_state)
@@ -481,7 +481,7 @@ if __name__ == '__main__':
     wandb.config.alpha_schedule = opt.alpha_schedule
     wandb.config.actor_hidden_sizes = opt.actor_hidden_sizes
     wandb.config.critic_hidden_sizes = opt.critic_hidden_sizes
-    wandb.config.lstm_history = opt.lstm_history
+    wandb.config.max_lookback = opt.max_lookback
     if resume_dict is None:
         wandb.config.seed = opt.seed
 
