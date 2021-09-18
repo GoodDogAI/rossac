@@ -108,7 +108,8 @@ def sum_centered_objects_present(bboxes: np.ndarray) -> float:
     return np.sum(all_probs / all_centers) * GLOBAL_REWARD_SCALE
 
 
-def prioritize_centered_spoons(bboxes: np.ndarray) -> float:
+def prioritize_centered_spoons_with_nms(bboxes: np.ndarray) -> float:
+    bboxes = non_max_supression(bboxes)
     return prioritize_centered_objects(bboxes, class_weights={
         "person": 3,
         "spoon": 10,
