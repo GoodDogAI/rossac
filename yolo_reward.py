@@ -22,7 +22,7 @@ input_h = 480
 input_w = 640
 class_num = 80
 
-GLOBAL_REWARD_SCALE = 0.01
+GLOBAL_REWARD_SCALE = 0.10
 
 class_names = ["person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign",
   "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack",
@@ -101,25 +101,21 @@ def _all_centers(bboxes: np.ndarray) -> np.ndarray:
                   ((bboxes[ ..., 1] - input_h / 2) / input_h) ** 2) + 0.1  # Small constant to prevent divide by zero explosion
 
 
-def sum_centered_objects_present(pred: List[np.ndarray]) -> float:
-    bboxes, intermediate = pred
-
+def sum_centered_objects_present(bboxes: np.ndarray) -> float:
     all_probs = bboxes[..., 4] * np.amax(bboxes[..., 5:], axis=-1)
     all_centers = _all_centers(bboxes)
 
     return np.sum(all_probs / all_centers) * GLOBAL_REWARD_SCALE
 
 
-def prioritize_centered_spoons(pred: List[np.ndarray]) -> float:
-    return prioritize_centered_objects(pred, class_weights={
+def prioritize_centered_spoons(bboxes: np.ndarray) -> float:
+    return prioritize_centered_objects(bboxes, class_weights={
         "person": 3,
         "spoon": 10,
     })
 
 
-def prioritize_centered_objects(pred: List[np.ndarray], class_weights: dict) -> float:
-    bboxes, intermediate = pred
-
+def prioritize_centered_objects(bboxes: np.ndarray, class_weights: dict) -> float:
     all_probs = bboxes[..., 4] * np.amax(bboxes[..., 5:], axis=-1)
     all_centers = _all_centers(bboxes)
 

@@ -24,8 +24,9 @@ class TestYoloReward(unittest.TestCase):
         return image_np
 
     def _get_sum_centered_objects_present(self, image_np) -> float:
-        pred = get_onnx_prediction(self.onnx_sess, image_np)
-        return sum_centered_objects_present(pred)
+        bboxes, intermediate = get_onnx_prediction(self.onnx_sess, image_np)
+        bboxes = non_max_supression(bboxes)
+        return sum_centered_objects_present(bboxes)
 
     def test_sum_centered_objects_present(self):
         reward = self._get_sum_centered_objects_present(self._load_image_np(
@@ -65,12 +66,14 @@ class TestYoloReward(unittest.TestCase):
     def test_prioritize_centered_objects(self):
         image_np = self._load_image_np(
             os.path.join(os.path.dirname(__file__), "test_data", "chair_person.png"))
-        pred = get_onnx_prediction(self.onnx_sess, image_np)
-        reward = sum_centered_objects_present(pred)
-        reward_scaled = prioritize_centered_objects(pred, {"person": 10,
-                                                           "chair": 10})
+        bboxes, intermediate = get_onnx_prediction(self.onnx_sess, image_np)
+        bboxes = non_max_supression(bboxes)
 
-        self.assertGreater(reward_scaled, reward)
+        reward = sum_centered_objects_present(bboxes)
+        reward_scaled = prioritize_centered_objects(bboxes, {"person": 10,
+                                                             "chair": 10})
+
+        self.assertAlmostEqual(reward_scaled, reward * 10)
 
     def test_nms(self):
         image_np = self._load_image_np(
