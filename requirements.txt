@@ -15,8 +15,12 @@ pandas
 pyarrow
 
 # For running the same ONNX models as run on the bot locally, for loss function estimation
-onnx
-onnxruntime
+onnx>=1.10
+onnxruntime-gpu
+
+# For running non max supression and other utility ops
+torchvision>=0.10.0
+
 
 # For reporting and saving training logs
 wandb

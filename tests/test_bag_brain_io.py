@@ -7,14 +7,14 @@ import onnxruntime as rt
 
 
 class TestBagBrainIO(unittest.TestCase):
-    test_bag = "/home/jake/bagfiles/test_bags/record-brain-freshplant18200-samp0.0_2021-08-27-15-49-21_1.bag"
-    test_onnx = "/home/jake/bagfiles/test_bags/freshplant18200.onnx"
+    test_bag = "/home/jake/bagfiles/test_bags/record-brain-sac-pleasant-frog-450-02048-samp0.0_2021-09-06-13-24-24_3.bag"
+    test_onnx = "/home/jake/hipow-checkpoints/sac-pleasant-frog-450-02048.onnx"
     test_yolo_onnx = os.path.join(os.path.dirname(__file__), "..", "yolov5s.onnx")
 
     def test_lstm_sample(self):
         bag = rosbag.Bag(self.test_bag, "r")
         onnx = rt.InferenceSession(self.test_onnx)
-        history_size = 8
+        history_size = 240
 
         inputs = []
         outputs = []
