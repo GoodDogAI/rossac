@@ -55,7 +55,7 @@ class TestLSTMReplayBuffer(unittest.TestCase):
             np.testing.assert_almost_equal(batch["obs"][i].numpy(), batch["lstm_history"][i, 0].numpy())
 
     def test_double_history_count(self):
-        replay = TorchLSTMReplayBuffer(obs_dim=20, act_dim=1, size=100, device="cuda:0", mode="right_aligned")
+        replay = TorchLSTMReplayBuffer(obs_dim=20, act_dim=1, size=100, history_size=5, device="cuda:0", mode="right_aligned")
 
         for i in range(100):
             replay.store(obs=np.random.rand(20),

@@ -97,4 +97,12 @@ class TestYoloReward(unittest.TestCase):
         self.assertAlmostEqual(detections[1].width, 82, delta=1.0)
         self.assertAlmostEqual(detections[1].height, 174, delta=1.0)
 
+    def test_indoor_image(self):
+        image_np = self._load_image_np(
+            os.path.join(os.path.dirname(__file__), "test_data", "person_indoor.png"))
+        bboxes, intermediate = get_onnx_prediction(self.onnx_sess, image_np)
+
+        nms_boxes = non_max_supression(bboxes)
+        detections = detect_yolo_bboxes(nms_boxes)
+        print(detections)
 

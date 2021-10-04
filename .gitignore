@@ -5,6 +5,7 @@ good_checkpoints/
 venv/*
 wandb/*
 tests/.hypothesis
+tests/test.onnx
 
 #Ignore thumbnails created by Windows
 Thumbs.db
