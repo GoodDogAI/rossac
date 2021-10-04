@@ -410,12 +410,11 @@ if __name__ == '__main__':
             pan_command, tilt_command = normalize_pantilt(entry.dynamixel_command_state)
             pan_curr, tilt_curr = normalize_pantilt(entry.dynamixel_cur_state)
 
-            move_penalty = abs(entry.cmd_vel).mean() * 0.002
-            pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.001)
-            if move_penalty + pantilt_penalty > 10:
-                print("WARNING: high move penalty!")
             reward = entry.reward
-            reward -= move_penalty + pantilt_penalty
+
+            # Removed movement and pantilt penalty
+            # reward -= move_penalty + pantilt_penalty
+
             reward += next_entry.punishment * DEFAULT_PUNISHMENT_MULTIPLIER
 
             obs = make_observation(entry)
