@@ -261,6 +261,7 @@ if __name__ == '__main__':
     parser.add_argument('--max-samples', type=int, default=20000, help='max number of training samples to load at once')
     parser.add_argument('--cpu', default=False, action="store_true", help='run training on CPU only')
     parser.add_argument('--reward-delay-ms', type=int, default=100, help='delay reward from action by the specified amount of milliseconds')
+    parser.add_argument('--base-reward-scale', type=float, default=1.0, help='Default scaling for the base yolo-reward')
     parser.add_argument('--punish-backtrack-ms', type=int, default=4000, help='backtrack punishment by the button by the specified amount of milliseconds')
     # default rate for dropout assumes small inputs (order of 1024 elements)
     parser.add_argument('--dropout', type=float, default=0.88, help='input dropout rate for training')
@@ -417,7 +418,7 @@ if __name__ == '__main__':
             pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.001)
             if move_penalty + pantilt_penalty > 10:
                 print("WARNING: high move penalty!")
-            reward = entry.reward
+            reward = entry.reward * opt.base_reward_scale
             reward -= move_penalty + pantilt_penalty
             reward += next_entry.punishment * DEFAULT_PUNISHMENT_MULTIPLIER
 
@@ -485,6 +486,8 @@ if __name__ == '__main__':
     wandb.config.actor_hidden_sizes = opt.actor_hidden_sizes
     wandb.config.critic_hidden_sizes = opt.critic_hidden_sizes
     wandb.config.max_lookback = opt.max_lookback
+    wandb.config.base_reward_scale = opt.base_reward_scale
+
     if resume_dict is None:
         wandb.config.seed = opt.seed
 
