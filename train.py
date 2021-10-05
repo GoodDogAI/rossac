@@ -19,8 +19,9 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import pyarrow as pa
-import torch
+import onnx # workaround for https://github.com/onnx/onnx/issues/3493
 import onnxruntime as rt
+import torch
 
 import tensorflow.compat.v1 as tf
 
