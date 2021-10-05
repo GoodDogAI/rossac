@@ -289,6 +289,8 @@ if __name__ == '__main__':
         device = None
         print("Using CPU")
 
+    replay_buffer_device = device if opt.gpu_replay_buffer else None
+
     opt.seed = opt.seed or random.randint(0, 2**31 - 1)
     torch.manual_seed(opt.seed)
     np.random.seed(opt.seed)
@@ -319,10 +321,10 @@ if __name__ == '__main__':
     replay_buffer_factory = ReplayBuffer
     if opt.max_lookback:
         replay_buffer_factory = lambda obs_dim, act_dim, size: TorchLSTMReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
-                                                                                     size=size, device=device, history_size=opt.max_lookback)
+                                                                                     size=size, device=replay_buffer_device, history_size=opt.max_lookback)
     else:
         replay_buffer_factory = lambda obs_dim, act_dim, size: TorchReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
-                                                                                 size=size, device=device)
+                                                                                 size=size, device=replay_buffer_device)
 
     actor_hidden_sizes = [int(s) for s in opt.actor_hidden_sizes.split(',')]
     critic_hidden_sizes = [int(s) for s in opt.critic_hidden_sizes.split(',')]
