@@ -1,4 +1,6 @@
 /yolov5s.onnx
+/yolov5s_trt.onnx
+/yolov5s_v5_0_op11_rossac.onnx
 __pycache__/
 checkpoints/
 good_checkpoints/
