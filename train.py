@@ -280,6 +280,7 @@ if __name__ == '__main__':
     parser.add_argument('--actor-hidden-sizes', type=str, default='512,256,256', help='actor network hidden layer sizes')
     parser.add_argument('--critic-hidden-sizes', type=str, default='512,256,256', help='critic network hidden layer sizes')
     parser.add_argument('--checkpoint-path', type=str, default='checkpoint/sac.tar', help='path to save/load checkpoint from')
+    parser.add_argument('--pretrained-path', type=str, help='path to load pretrained checkpoint, from which the training will be started as a new run')
     parser.add_argument('--wandb-mode', type=str, default='online', help='wandb mode (offline/online/disabled)')
     opt = parser.parse_args()
 
@@ -362,6 +363,13 @@ if __name__ == '__main__':
                           lr=opt.lr,
                           ac_kwargs=actor_critic_args,
                           replay_buffer_factory=replay_buffer_factory)
+
+    resume_dict = sac.load(opt.checkpoint_path) if os.path.exists(opt.checkpoint_path) else None
+    pretrained_dict = None
+    if opt.pretrained_path:
+        if resume_dict:
+            raise 'if pretrained-path is specified, checkpoint-path must not already exist'
+        pretrained_dict = sac.load(opt.pretrained_path)
 
     num_samples = min(len(all_entries)-1, opt.max_samples)
 
@@ -455,8 +463,6 @@ if __name__ == '__main__':
     print(f"NaNs in {nans} of {num_samples} samples, large obs in {oobs}, threads: {threads}")
     print(f"avg. episode len: {(num_samples + 1) / (dones + 1)}")
 
-    resume_dict = sac.load(opt.checkpoint_path) if os.path.exists(opt.checkpoint_path) else None
-
     wandb.init(project="sac-series1", entity="armyofrobots",
                mode=opt.wandb_mode,
                resume=resume_dict is not None,
@@ -487,6 +493,10 @@ if __name__ == '__main__':
     wandb.config.critic_hidden_sizes = opt.critic_hidden_sizes
     wandb.config.max_lookback = opt.max_lookback
     wandb.config.base_reward_scale = opt.base_reward_scale
+    if opt.pretrained_path:
+        from pathlib import Path
+        wandb.config.pretrained_name = Path(opt.pretrained_path).stem
+        print('loaded pretrained: ' + wandb.config.pretrained_name)
 
     if resume_dict is None:
         wandb.config.seed = opt.seed
@@ -505,6 +515,8 @@ if __name__ == '__main__':
     epoch_start = time.perf_counter()
 
     i = resume_dict['step']+1 if resume_dict is not None else 0
+    if pretrained_dict is not None:
+        i = pretrained_dict['step'] + 1
     batches_per_step = round(SAMPLES_PER_STEP / opt.batch_size)
 
     def lr_scheduler(optim, lambda_code):
