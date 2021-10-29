@@ -6,7 +6,8 @@ import png
 import onnxruntime as rt
 
 
-from yolo_reward import get_onnx_prediction, sum_centered_objects_present, prioritize_centered_objects, non_max_supression
+from yolo_reward import get_onnx_prediction, sum_centered_objects_present, prioritize_centered_objects, \
+    non_max_supression, prioritize_centered_large_objects
 from yolo_reward import detect_yolo_bboxes
 
 
@@ -74,6 +75,18 @@ class TestYoloReward(unittest.TestCase):
                                                              "chair": 10})
 
         self.assertAlmostEqual(reward_scaled, reward * 10, places=5)
+
+    def test_prioritize_centered_large_objects(self):
+        image_np = self._load_image_np(
+            os.path.join(os.path.dirname(__file__), "test_data", "chair_person.png"))
+        bboxes, intermediate = get_onnx_prediction(self.onnx_sess, image_np)
+        bboxes = non_max_supression(bboxes)
+
+        reward = prioritize_centered_objects(bboxes, {})
+        reward_sized = prioritize_centered_large_objects(bboxes, {})
+
+        print(f"Regular reward: {reward}")
+        print(f"Weighted by size reward: {reward_sized}")
 
     def test_nms(self):
         image_np = self._load_image_np(
