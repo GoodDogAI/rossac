@@ -1,5 +1,6 @@
 # This file contains code to take in an image, run it through the YOLO ONNX network, and produce a "loss"
 # We are shooting for an initial loss function to be "is there a detected object in the center of the frame"
+import time
 from pathlib import Path
 from typing import List
 
@@ -85,12 +86,13 @@ def non_max_supression(input_bboxes: np.ndarray, iou_threshold: float = 0.50) ->
     scores = yolo_bboxes[..., 4] * torch.amax(yolo_bboxes[..., 5:], dim=-1)
 
     # Remove boxes that are below some low threshold
-    confidence_filter_mask = scores > 0.10
+    confidence_filter_mask = scores > 0.01
     boxes = boxes[confidence_filter_mask]
     scores = scores[confidence_filter_mask]
     original_indexes = torch.arange(0, yolo_bboxes.shape[0], dtype=torch.int64)[confidence_filter_mask]
 
     nms_boxes = torchvision.ops.nms(boxes, scores, iou_threshold=iou_threshold)
+
     original_nms_boxes = original_indexes[nms_boxes]
 
     return input_bboxes[0, original_nms_boxes]
@@ -114,6 +116,28 @@ def prioritize_centered_spoons_with_nms(bboxes: np.ndarray) -> float:
         "person": 3,
         "spoon": 10,
     })
+
+
+def prioritize_centered_large_spoons_with_nms(bboxes: np.ndarray) -> float:
+    bboxes = non_max_supression(bboxes)
+    return prioritize_centered_large_objects(bboxes, class_weights={
+        "person": 3,
+        "spoon": 10,
+    })
+
+
+def prioritize_centered_large_objects(bboxes: np.ndarray, class_weights: dict) -> float:
+    all_probs = bboxes[..., 4] * np.amax(bboxes[..., 5:], axis=-1)
+    all_centers = _all_centers(bboxes)
+    all_sizes = (bboxes[..., 2] * bboxes[..., 3]) / (input_w * input_h) * 5.0 # The multiple x5 is to take the weights approximately to the same place as they were before
+
+    classes = np.argmax(bboxes[..., 5:], axis=-1)
+    factors = np.ones_like(all_probs)
+
+    for (cls, factor) in class_weights.items():
+        factors *= np.where(classes == class_names.index(cls), factor, 1.0)
+
+    return np.sum((all_probs * all_sizes * factors) / all_centers) * GLOBAL_REWARD_SCALE
 
 
 def prioritize_centered_objects(bboxes: np.ndarray, class_weights: dict) -> float:
