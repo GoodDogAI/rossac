@@ -21,6 +21,8 @@ onnxruntime-gpu
 # For running non max supression and other utility ops
 torchvision>=0.10.0
 
+# For getting nvidia's latest NEMO audio models
+nemo_toolkit['all']
 
 # For reporting and saving training logs
 wandb
