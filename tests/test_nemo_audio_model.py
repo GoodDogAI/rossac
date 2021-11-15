@@ -138,7 +138,20 @@ class TestNemoAudioModel(unittest.TestCase):
 
         # Export the model
         asr_model.export("asr_command_recognition.onnx",
-                         use_dynamic_axes=False)
+                         onnx_opset_version=12)
+
+        # Test that the result matches between ONNX and a native run
+        random_input = torch.rand(1, 64, 1000).cuda()
+        encoder_output, _ = asr_model.input_module(audio_signal=random_input, length=torch.tensor([1000]))
+        decoder_output = asr_model.output_module(encoder_output=encoder_output)
+
+        # Had a weird error running this one in CUDA, so it's stuck on CPU
+        onnx_sess = rt.InferenceSession("asr_command_recognition.onnx", providers=["CPUExecutionProvider"])
+        onnx_result = onnx_sess.run(["logits"], {
+            "audio_signal": random_input.cpu().detach().numpy()
+        })
+
+        np.testing.assert_almost_equal(decoder_output[0].cpu().numpy(), onnx_result[0][0], decimal=3)
 
     def test_featurizer_export(self):
         asr_model = EncDecClassificationModel.from_pretrained("commandrecognition_en_matchboxnet3x2x64_v2")
