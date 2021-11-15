@@ -4,7 +4,7 @@ from typing import Optional, Callable
 
 import numpy as np
 import onnxruntime as rt
-import math
+from scipy.special import softmax
 import librosa
 import soundfile
 import torch
@@ -171,10 +171,13 @@ class TestNemoAudioModel(unittest.TestCase):
                           "asr_featurizer.onnx",
                           input_names=["audio_signal"],
                           output_names=["audio_features"],
+                          dynamic_axes={
+                              "audio_signal": [1]
+                          },
                           opset_version=12)
 
         # Test that the result matches between onnx and a native run
-        random_input = torch.rand(1, 48000 * 4).cuda()
+        random_input = torch.rand(1, 48000 * 7).cuda()
         orig_result = asr_model.preprocessor.featurizer(random_input)
 
         onnx_sess = rt.InferenceSession("asr_featurizer.onnx")
@@ -219,4 +222,24 @@ class TestNemoAudioModel(unittest.TestCase):
 
         self.assertEqual(asr_model.cfg.labels[24], "forward")
         self.assertEqual(np.argmax(result.detach().numpy()), 24)
+
+    def test_onnx_sample_categorization(self):
+        wav, sr = soundfile.read(os.path.join(os.path.dirname(__file__), "test_data", "jake_clean_forward.wav"))
+        wav = wav.astype(np.float32)
+
+        onnx_featurizer = rt.InferenceSession("asr_featurizer.onnx")
+        onnx_features = onnx_featurizer.run(["audio_features"], {
+            "audio_signal": np.expand_dims(wav, axis=0)
+        })
+
+        onnx_model = rt.InferenceSession("asr_command_recognition.onnx", providers=["CPUExecutionProvider"])
+        onnx_result = onnx_model.run(["logits"], {
+            "audio_signal": onnx_features[0]
+        })
+
+        result = softmax(onnx_result[0])
+
+        # Correspond to "forward"
+        self.assertEqual(np.argmax(onnx_result[0]), 24)
+
 
