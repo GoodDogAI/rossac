@@ -3,7 +3,7 @@ import os
 from typing import Optional, Callable
 
 import numpy as np
-import nemo
+import onnxruntime as rt
 import math
 import librosa
 import soundfile
@@ -14,19 +14,19 @@ from torchaudio import transforms
 
 
 class FullyExportableSTFT(torch.nn.Module):
-    def __init__(self, win_length, hop_length, window_fn, window_periodic = True, stft_mode = None):
+    def __init__(self, win_length, hop_length, window_fn, n_fft, window_periodic = True, stft_mode = None):
         super().__init__()
+        self.n_fft = n_fft
         self.win_length = win_length
         self.hop_length = hop_length
-        self.nfft = 2**math.ceil(math.log2(self.win_length))
-        self.freq_cutoff = self.nfft // 2 + 1
+        self.freq_cutoff = self.n_fft // 2 + 1
         self.register_buffer('window', window_fn(self.win_length, periodic=window_periodic).float())
 
         if stft_mode == 'conv':
-            fourier_basis = torch.view_as_real(torch.fft.fft(torch.eye(self.nfft), dim=1))
+            fourier_basis = torch.view_as_real(torch.fft.fft(torch.eye(self.n_fft), dim=1))
             forward_basis = fourier_basis[:self.freq_cutoff].permute(2, 0, 1).reshape(-1, 1, fourier_basis.shape[1])
             forward_basis = forward_basis * torch.as_tensor(
-                librosa.util.pad_center(self.window, self.nfft), dtype=forward_basis.dtype
+                librosa.util.pad_center(self.window, self.n_fft), dtype=forward_basis.dtype
             )
             self.stft = torch.nn.Conv1d(
                 forward_basis.shape[1],
@@ -40,13 +40,16 @@ class FullyExportableSTFT(torch.nn.Module):
             raise NotImplementedError()
 
     def forward(self, signal):
-        # pad = self.freq_cutoff - 1
-        # padded_signal = torch.nn.functional.pad(signal.unsqueeze(1), (pad, pad), mode = 'reflect').squeeze(1)
+        # These need to be commented out to work on Jetson TensorRT
+        pad = self.freq_cutoff - 1
+        padded_signal = torch.nn.functional.pad(signal.unsqueeze(1), (pad, pad), mode = 'reflect').squeeze(1)
 
-        padded_signal = signal
+        #padded_signal = signal
 
         real, imag = self.stft(padded_signal.unsqueeze(dim = 1)).split(self.freq_cutoff, dim = 1)
-        return real, imag
+
+        spec = real.pow(2) + imag.pow(2)
+        return torch.sqrt(spec)
 
 
 class FullyExportableSpectrogram(torch.nn.Module):
@@ -83,6 +86,7 @@ class FullyExportableSpectrogram(torch.nn.Module):
 
         self.stft_module = FullyExportableSTFT(win_length, hop_length,
                                                window_fn=window_fn,
+                                               n_fft=n_fft,
                                                stft_mode="conv")
 
     def forward(self, waveform: Tensor) -> Tensor:
@@ -110,7 +114,7 @@ class FullyExportableSpectrogram(torch.nn.Module):
         spec_f = self.stft_module(waveform)
 
         # TODO: Verify Jake's edit Take only the real part
-        spec_f, imag_f = spec_f
+        #spec_f, imag_f = spec_f
 
         # unpack batch
         spec_f = spec_f.reshape(shape[:-1] + spec_f.shape[-2:])
@@ -129,14 +133,14 @@ class FullyExportableSpectrogram(torch.nn.Module):
 class TestNemoAudioModel(unittest.TestCase):
     sample_rate = 16_000
 
-    def test_nemo_export(self):
+    def test_model_export(self):
         asr_model = EncDecClassificationModel.from_pretrained("commandrecognition_en_matchboxnet3x2x64_v2")
 
         # Export the model
         asr_model.export("asr_command_recognition.onnx",
                          use_dynamic_axes=False)
 
-    def test_stft_override_export(self):
+    def test_featurizer_export(self):
         asr_model = EncDecClassificationModel.from_pretrained("commandrecognition_en_matchboxnet3x2x64_v2")
         print(asr_model)
 
@@ -152,8 +156,22 @@ class TestNemoAudioModel(unittest.TestCase):
         torch.onnx.export(asr_model.preprocessor.featurizer,
                           torch.rand(1, 48000 * 4).cuda(),
                           "asr_featurizer.onnx",
+                          input_names=["audio_signal"],
+                          output_names=["audio_features"],
                           opset_version=12)
 
+    def test_exported_featurizer_matches(self):
+        random_input = torch.rand(1, 48000 * 4).cuda()
+
+        asr_model = EncDecClassificationModel.from_pretrained("commandrecognition_en_matchboxnet3x2x64_v2")
+        orig_result = asr_model.preprocessor.featurizer(random_input)
+
+        onnx_sess = rt.InferenceSession("asr_featurizer.onnx")
+        onnx_result = onnx_sess.run(["audio_features"], {
+            "audio_signal": random_input.cpu().detach().numpy()
+        })
+
+        print("a")
 
     def test_export_sample_data(self):
         wav, sr = soundfile.read(os.path.join(os.path.dirname(__file__), "test_data", "jake_clean_forward.wav"))
