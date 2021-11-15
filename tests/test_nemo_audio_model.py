@@ -160,10 +160,8 @@ class TestNemoAudioModel(unittest.TestCase):
                           output_names=["audio_features"],
                           opset_version=12)
 
-    def test_exported_featurizer_matches(self):
+        # Test that the result matches between onnx and a native run
         random_input = torch.rand(1, 48000 * 4).cuda()
-
-        asr_model = EncDecClassificationModel.from_pretrained("commandrecognition_en_matchboxnet3x2x64_v2")
         orig_result = asr_model.preprocessor.featurizer(random_input)
 
         onnx_sess = rt.InferenceSession("asr_featurizer.onnx")
@@ -171,7 +169,7 @@ class TestNemoAudioModel(unittest.TestCase):
             "audio_signal": random_input.cpu().detach().numpy()
         })
 
-        print("a")
+        np.testing.assert_almost_equal(orig_result[0].cpu().numpy(), onnx_result[0][0], decimal=3)
 
     def test_export_sample_data(self):
         wav, sr = soundfile.read(os.path.join(os.path.dirname(__file__), "test_data", "jake_clean_forward.wav"))
