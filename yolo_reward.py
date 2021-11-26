@@ -44,7 +44,7 @@ class BBox:
     confidence: float
 
 
-def detect_yolo_bboxes(final_detections: np.ndarray) -> List[BBox]:
+def detect_yolo_bboxes(final_detections: np.ndarray, threshold=0.50) -> List[BBox]:
     # Expected shape is ([batch], N, 85), or a list of all possible detections to check in a given image
     # Format of the 85-tensor is [center x, center y, width, height,
     #                             box_probability, person_probability, bicycle_probability..., toothbrush_probability]
@@ -58,14 +58,14 @@ def detect_yolo_bboxes(final_detections: np.ndarray) -> List[BBox]:
     for pred in final_detections:
         box_prob = pred[4]
 
-        if box_prob < 0.50:
+        if box_prob < threshold:
             continue
 
         for class_idx in range(class_num):
             class_prob = pred[5 + class_idx]
             class_prob *= box_prob
 
-            if class_prob > 0.50:
+            if class_prob >= threshold:
                 boxes.append(BBox(x=pred[0] - pred[2] / 2,
                                   y=pred[1] - pred[3] / 2,
                                   width=pred[2],
@@ -130,13 +130,8 @@ def prioritize_centered_objects(bboxes: np.ndarray, class_weights: dict) -> floa
 
 
 def convert_wh_to_nchw(image_np: np.ndarray) -> np.ndarray:
-    # First shape it into the 1xWxHx1 format
-    # Go from (H, W) to (1, H, W, 1)
+    # Go from (H, W) to (1, H, W, 3)
     image_np = np.expand_dims(image_np, 0)
-    image_np = np.expand_dims(image_np, -1)
-
-    # Now broadcast to 1xHxWx3
-    image_np = image_np * np.ones(dtype=image_np.dtype, shape=(image_np.shape[0], image_np.shape[1], image_np.shape[2], 3))
 
     assert image_np.shape[2] == input_w
     assert image_np.shape[1] == input_h

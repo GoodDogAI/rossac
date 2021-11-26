@@ -42,7 +42,7 @@ class FullyExportableSTFT(torch.nn.Module):
     def forward(self, signal):
         # These need to be commented out to work on Jetson TensorRT
         pad = self.freq_cutoff - 1
-        padded_signal = torch.nn.functional.pad(signal.unsqueeze(1), (pad, pad), mode = 'reflect').squeeze(1)
+        padded_signal = torch.nn.functional.pad(signal.unsqueeze(1), (256, 256), mode = 'reflect').squeeze(1)
 
         #padded_signal = signal
 
@@ -169,15 +169,22 @@ class TestNemoAudioModel(unittest.TestCase):
         torch.onnx.export(asr_model.preprocessor.featurizer,
                           torch.rand(1, 48000 * 4).cuda(),
                           "asr_featurizer.onnx",
+                          do_constant_folding=True,
                           input_names=["audio_signal"],
                           output_names=["audio_features"],
                           dynamic_axes={
                               "audio_signal": [1]
                           },
-                          opset_version=12)
+                          opset_version=10)
+
+        # NOTE: Export Opset Needs to be version 10, otherwise the "pad" function adds dynamic shapes which mess up TensorRT
+        # Tracked here: https://github.com/pytorch/pytorch/issues/35516
 
         # Test that the result matches between onnx and a native run
         random_input = torch.rand(1, 48000 * 7).cuda()
+
+        # Get an unmodified model
+        asr_model = EncDecClassificationModel.from_pretrained("commandrecognition_en_matchboxnet3x2x64_v2")
         orig_result = asr_model.preprocessor.featurizer(random_input)
 
         onnx_sess = rt.InferenceSession("asr_featurizer.onnx")

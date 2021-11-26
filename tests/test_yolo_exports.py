@@ -1,4 +1,5 @@
 import unittest
+from collections import Counter
 from math import sqrt
 
 import torch
@@ -9,7 +10,7 @@ import png
 import onnxruntime as rt
 
 
-from yolo_reward import get_onnx_prediction, convert_wh_to_nchw
+from yolo_reward import get_onnx_prediction, convert_wh_to_nchw, non_max_supression
 from yolo_reward import detect_yolo_bboxes
 
 
@@ -61,3 +62,24 @@ class TestYoloExport(unittest.TestCase):
         # All detections should be in lower left corner
         for box in boxes:
             self.assertLess(sqrt((box.x - 50) ** 2 + (box.y - 356) ** 2), 100)
+
+    def testColorBasic(self):
+        onnx_sess = rt.InferenceSession(self.onnx_path)
+        pngdata = png.Reader(filename=os.path.join(os.path.dirname(__file__), "test_data", "frame0429.png")).asRGBA8()
+        image_np = np.vstack(pngdata[2])
+        image_np = image_np[:, np.mod(np.arange(image_np.shape[1]), 4) != 3] # Skip the alpha channels
+        image_np = image_np.reshape((image_np.shape[0], image_np.shape[1] // 3, 3))
+
+        bboxes, intermediate = get_onnx_prediction(onnx_sess, image_np)
+        nms_boxes = non_max_supression(bboxes)
+        detections = detect_yolo_bboxes(nms_boxes, threshold=0.25)
+
+        # Check that it matches the official rendering at least in number of detections of each kind
+        c = Counter(d.class_name for d in detections)
+
+        self.assertEqual(c, {
+            "tv": 1,
+            "potted plant": 1,
+            "book": 6,
+            "chair": 1,
+        })
