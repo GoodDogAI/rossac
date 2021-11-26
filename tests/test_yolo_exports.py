@@ -9,12 +9,12 @@ import os
 import onnxruntime as rt
 
 
-from yolo_reward import get_onnx_prediction, convert_wh_to_nchw, non_max_supression, load_png
+from yolo_reward import get_onnx_prediction, convert_hwc_to_nchw, non_max_supression, load_png
 from yolo_reward import detect_yolo_bboxes
 
 
 def get_pt_gpu_prediction(pt: torch.ScriptModule, image_np: np.ndarray) -> np.ndarray:
-    image_np = torch.from_numpy(convert_wh_to_nchw(image_np))
+    image_np = torch.from_numpy(convert_hwc_to_nchw(image_np))
 
     device = torch.device("cuda")
     pred = pt(image_np.to(device))
@@ -35,7 +35,7 @@ class TestYoloExport(unittest.TestCase):
         onnx_pred = get_onnx_prediction(onnx_sess, self.image_np)
 
         pt_sess = torch.jit.load(self.pt_path)
-        pt_pred = pt_sess(torch.from_numpy(convert_wh_to_nchw(self.image_np)))
+        pt_pred = pt_sess(torch.from_numpy(convert_hwc_to_nchw(self.image_np)))
 
         gpu_device = torch.device("cuda")
         pt_gpu_sess = torch.jit.load(self.pt_path, gpu_device)

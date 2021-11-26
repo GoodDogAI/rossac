@@ -137,8 +137,8 @@ def prioritize_centered_objects(bboxes: np.ndarray, class_weights: dict) -> floa
     return np.sum((all_probs * factors) / all_centers) * GLOBAL_REWARD_SCALE
 
 
-def convert_wh_to_nchw(image_np: np.ndarray) -> np.ndarray:
-    # Go from (H, W) to (1, H, W, 3)
+def convert_hwc_to_nchw(image_np: np.ndarray) -> np.ndarray:
+    # Go from (H, W, 3) to (1, H, W, 3)
     image_np = np.expand_dims(image_np, 0)
 
     assert image_np.shape[2] == input_w
@@ -154,7 +154,7 @@ def convert_wh_to_nchw(image_np: np.ndarray) -> np.ndarray:
 
 
 def get_onnx_prediction(sess: rt.InferenceSession, image_np: np.ndarray) -> List[np.ndarray]:
-    image_np = convert_wh_to_nchw(image_np)
+    image_np = convert_hwc_to_nchw(image_np)
 
     pred = sess.run(output_binding_names, {
         input_binding_name: image_np

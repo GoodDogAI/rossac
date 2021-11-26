@@ -23,7 +23,7 @@ class TestBagYoloIntermediate(unittest.TestCase):
             for i in range(0, len(msg.data), msg.step):
                 img.append(np.frombuffer(msg.data[i:i + msg.step], dtype=np.uint8))
             image_np = np.array(img)
-            image_np = image_np.reshape((480, 640, 3))
+            image_np = image_np.reshape((msg.height, msg.width, -1))
             inputs.append(image_np)
 
         for topic, msg, ts in bag.read_messages(["/yolo_intermediate"]):

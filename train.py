@@ -171,12 +171,13 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
     wait_for_each_msg = bag_file.endswith("_0.bag")
     received_topic = defaultdict(bool)
     ros_topics = [opt.camera_topic,
-                  '/dynamixel_workbench/dynamixel_state',
+                  '/audio',
                   '/camera/accel/sample',
                   '/camera/gyro/sample',
                   '/head_feedback',
-                  '/cmd_vel',
                   '/odrive_feedback',
+                  '/cmd_vel',
+                  '/head_cmd',
                   '/reward_button',
                   '/vbus']
 
@@ -192,10 +193,9 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
             for i in range(0, len(msg.data), msg.step):
                 img.append(np.frombuffer(msg.data[i:i + msg.step], dtype=np.uint8))
 
-            assert "infra" in opt.camera_topic, "Expecting mono infrared images only right now"
-
             # Convert list of byte arrays to numpy array
             image_np = np.array(img)
+            image_np = image_np.reshape((msg.height, msg.width, -1))
             bboxes, intermediate = get_onnx_prediction(get_onnx_sess(backbone_onnx_path), image_np)
             reward = reward_func(bboxes)
 
@@ -207,17 +207,21 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
 
             entries["yolo_intermediate"][full_ts] = _flatten(intermediate)[::interpolation_slice]
             entries["reward"][full_ts + reward_delay_ms * 1000000] = reward
+        elif topic == '/audio':
+            entries["audio"][full_ts] = np.frombuffer(msg.data, dtype=np.float32)
         elif topic == '/reward_button':
             entries["punishment"][full_ts + punish_backtrack_ms * 1000000] = np.array([msg.data])
-        elif topic == '/dynamixel_workbench/dynamixel_state':
-            entries["dynamixel_cur_state"][full_ts] = np.array([msg.dynamixel_state[0].present_position,
-                                                                msg.dynamixel_state[1].present_position])
         elif topic == "/head_feedback":
-            entries["dynamixel_command_state"][full_ts] = np.array([msg.pan_command,
-                                                                    msg.tilt_command])
+            entries["head_feedback"][full_ts] = np.array([msg.cur_angle_pitch,
+                                                          msg.cur_angle_yaw,
+                                                          msg.motor_power_pitch,
+                                                          msg.motor_power_yaw])
         elif topic == "/cmd_vel":
             entries["cmd_vel"][full_ts] = np.array([msg.linear.x,
                                                     msg.angular.z])
+        elif topic == "/head_cmd":
+            entries["head_cmd"][full_ts] = np.array([msg.cmd_angle_pitch,
+                                                     msg.cmd_angle_yaw])
         elif topic == "/camera/accel/sample":
             entries["head_accel"][full_ts] = np.array([msg.linear_acceleration.x,
                                                        msg.linear_acceleration.y,
@@ -230,7 +234,9 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
             entries["odrive_feedback"][full_ts] = np.array([msg.motor_vel_actual_0,
                                                             msg.motor_vel_actual_1,
                                                             msg.motor_vel_cmd_0,
-                                                            msg.motor_vel_cmd_1])
+                                                            msg.motor_vel_cmd_1,
+                                                            msg.motor_current_actual_0,
+                                                            msg.motor_current_actual_1])
         elif topic == "/vbus":
             entries["vbus"][full_ts] = np.array([msg.data])
         else:
@@ -254,7 +260,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--bag-dir', type=str, help='directory with bag files to use for training data')
     parser.add_argument("--onnx", type=str, default='./yolov5s_v5_0_op11_rossac.onnx', help='onnx weights path for intermediate stage')
-    parser.add_argument("--camera_topic", default='/camera/infra2/image_rect_raw')
+    parser.add_argument("--camera_topic", default='/processed_img')
     parser.add_argument("--reward", default='prioritize_centered_spoons_with_nms')
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
     parser.add_argument('--batch-size', type=int, default=128, help='number of samples per training step')
