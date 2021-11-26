@@ -1,6 +1,7 @@
 # This file contains code to take in an image, run it through the YOLO ONNX network, and produce a "loss"
 # We are shooting for an initial loss function to be "is there a detected object in the center of the frame"
-from pathlib import Path
+import os
+import png
 from typing import List
 
 from dataclasses import dataclass
@@ -33,7 +34,6 @@ class_names = ["person", "bicycle", "car", "motorcycle", "airplane", "bus", "tra
   "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"]
 
 
-
 @dataclass
 class BBox:
     x: int
@@ -42,6 +42,14 @@ class BBox:
     height: int
     class_name: str
     confidence: float
+
+
+def load_png(png_path: str) -> np.ndarray:
+    pngdata = png.Reader(filename=png_path).asRGBA8()
+    image_np = np.vstack(pngdata[2])
+    image_np = image_np[:, np.mod(np.arange(image_np.shape[1]), 4) != 3]  # Skip the alpha channels
+    image_np = image_np.reshape((image_np.shape[0], image_np.shape[1] // 3, 3))
+    return image_np
 
 
 def detect_yolo_bboxes(final_detections: np.ndarray, threshold=0.50) -> List[BBox]:
