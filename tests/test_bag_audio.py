@@ -9,7 +9,7 @@ import tempfile
 
 class TestBagAudio(unittest.TestCase):
     sample_rate = 48_000
-    test_bag = "/home/jake/bagfiles/july_2021/record-brain-sac-tough-jazz-464-24576-samp0.1_2021-11-05-13-19-40_12.bag"
+    test_bag = "/home/jake/Downloads/record-brain-sac-young-hippogriff-465-15872-samp0.0_2021-11-26-11-44-20_0.bag"
 
     def test_bag_audio(self):
         bag = rosbag.Bag(self.test_bag, "r")
