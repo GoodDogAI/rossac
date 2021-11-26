@@ -6,11 +6,10 @@ import torch
 import numpy as np
 import os
 
-import png
 import onnxruntime as rt
 
 
-from yolo_reward import get_onnx_prediction, convert_wh_to_nchw, non_max_supression
+from yolo_reward import get_onnx_prediction, convert_wh_to_nchw, non_max_supression, load_png
 from yolo_reward import detect_yolo_bboxes
 
 
@@ -29,11 +28,7 @@ class TestYoloExport(unittest.TestCase):
     pt_path = os.path.join(os.path.dirname(__file__), "..", "yolov5s.torchscript.pt")
 
     def setUp(self) -> None:
-        pngdata = png.Reader(filename=os.path.join(os.path.dirname(__file__), "test_data", "chair_person.png")).asRGBA8()
-        image_np = np.vstack(pngdata[2])
-        image_np = image_np[:, np.mod(np.arange(image_np.shape[1]), 4) != 3]  # Skip the alpha channels
-        image_np = image_np.reshape((image_np.shape[0], image_np.shape[1] // 3, 3))
-        self.image_np = image_np
+        self.image_np = load_png(os.path.join(os.path.dirname(__file__), "test_data", "chair_person.png"))
 
     def testOnnxAndPTMatch(self):
         onnx_sess = rt.InferenceSession(self.onnx_path)
@@ -65,10 +60,7 @@ class TestYoloExport(unittest.TestCase):
 
     def testColorBasic(self):
         onnx_sess = rt.InferenceSession(self.onnx_path)
-        pngdata = png.Reader(filename=os.path.join(os.path.dirname(__file__), "test_data", "frame0429.png")).asRGBA8()
-        image_np = np.vstack(pngdata[2])
-        image_np = image_np[:, np.mod(np.arange(image_np.shape[1]), 4) != 3] # Skip the alpha channels
-        image_np = image_np.reshape((image_np.shape[0], image_np.shape[1] // 3, 3))
+        image_np = load_png(os.path.join(os.path.dirname(__file__), "test_data", "frame0429.png"))
 
         bboxes, intermediate = get_onnx_prediction(onnx_sess, image_np)
         nms_boxes = non_max_supression(bboxes)
