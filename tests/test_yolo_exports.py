@@ -29,10 +29,10 @@ class TestYoloExport(unittest.TestCase):
     pt_path = os.path.join(os.path.dirname(__file__), "..", "yolov5s.torchscript.pt")
 
     def setUp(self) -> None:
-        pngdata = png.Reader(filename=os.path.join(os.path.dirname(__file__), "test_data", "chair_person.png")).asRGB8()
+        pngdata = png.Reader(filename=os.path.join(os.path.dirname(__file__), "test_data", "chair_person.png")).asRGBA8()
         image_np = np.vstack(pngdata[2])
+        image_np = image_np[:, np.mod(np.arange(image_np.shape[1]), 4) != 3]  # Skip the alpha channels
         image_np = image_np.reshape((image_np.shape[0], image_np.shape[1] // 3, 3))
-        image_np = image_np[..., 0]
         self.image_np = image_np
 
     def testOnnxAndPTMatch(self):
