@@ -3,15 +3,16 @@ import numpy as np
 from math import inf, ceil
 from typing import Optional
 
-PAN_LOW = 350
-PAN_HIGH = 700
-TILT_LOW = 475
-TILT_HIGH = 725
+PAN_LOW = -35
+PAN_HIGH = 35
+TILT_LOW = -35
+TILT_HIGH = 35
 
 
-def _normalize(val, low, high):
+def normalize_output(val, low, high):
     return (val - low) * 2 / (high - low) - 1
-def _from_normalized(val_normalized, low, high):
+
+def output_from_normalized(val_normalized, low, high):
     return (val_normalized + 1) * (high - low) / 2 + low
 
 YOLO_OBSERVATION_SPACE = Box(low=-inf, high=inf, shape=(512 * 15 * 20,), dtype=np.float32)
@@ -52,12 +53,12 @@ class NormalizedRobotEnvironment(SlicedRobotEnvironment):
                        high=np.array([+0.5, +0.5, +1, +1]), dtype=np.float32)
 
     @staticmethod
-    def normalize_pan(pan): return _normalize(pan, low=PAN_LOW, high=PAN_HIGH)
+    def normalize_pan(pan): return normalize_output(pan, low=PAN_LOW, high=PAN_HIGH)
     @staticmethod
     def pan_from_normalized(normalized_pan):
-        return _from_normalized(normalized_pan, low=PAN_LOW, high=PAN_HIGH)
+        return output_from_normalized(normalized_pan, low=PAN_LOW, high=PAN_HIGH)
     @staticmethod
-    def normalize_tilt(tilt): return _normalize(tilt, low=TILT_LOW, high=TILT_HIGH)
+    def normalize_tilt(tilt): return normalize_output(tilt, low=TILT_LOW, high=TILT_HIGH)
     @staticmethod
     def tilt_from_normalized(normalized_tilt):
-        return _from_normalized(normalized_tilt, low=TILT_LOW, high=TILT_HIGH)
+        return output_from_normalized(normalized_tilt, low=TILT_LOW, high=TILT_HIGH)

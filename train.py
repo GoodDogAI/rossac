@@ -25,7 +25,8 @@ import torch
 
 import tensorflow.compat.v1 as tf
 
-from bot_env import RobotEnvironment, NormalizedRobotEnvironment
+from bot_env import RobotEnvironment, NormalizedRobotEnvironment, normalize_output
+from bot_env import PAN_LOW, PAN_HIGH, TILT_LOW, TILT_HIGH
 from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic, TorchLSTMReplayBuffer
 import yolo_reward
 from split_dropout import SplitDropout
@@ -46,92 +47,54 @@ def get_onnx_sess(onnx_path: str) -> rt.InferenceSession:
     return rt.InferenceSession(onnx_path)
 
 
-def interpolate(pre_ts, pre_data, ts, post_ts, post_data):
-    interval_len = post_ts - pre_ts
-    if interval_len == 0: return pre_data
-    target_offset = ts - pre_ts
-    interval_diff = post_data - pre_data
-    return pre_data + (interval_diff * target_offset / interval_len)
-
-assert(interpolate(1, 1, 5, 11, 11) == 5)
-
-
-def interpolate_events(primary, secondaries, max_gap_ns):
-    primary = sorted(primary.items())
-    secondaries = list(map(lambda dict: list(sorted(dict.items())), secondaries))
-
-    result = []
-    for ts, event in primary:
-        interpolated = []
-        for i in range(len(secondaries)):
-            while len(secondaries[i]) > 0:
-                if len(secondaries[i]) == 1:
-                    # only one potentially correlated reading
-                    secondary_ts, data = secondaries[i][0]
-                    if abs(secondary_ts - ts) < max_gap_ns:
-                        interpolated.append(data)
-                    break
-                elif secondaries[i][1][0] < ts:
-                    # next and next+1 readings are both before "now"
-                    # means we can drop next and advance to next+1
-                    secondaries[i].pop(0)
-                elif secondaries[i][0][0] >= ts:
-                    # all readings are after "now", so we may only use the first
-                    secondary_ts, data = secondaries[i][0]
-                    if abs(secondary_ts - ts) < max_gap_ns:
-                        interpolated.append(data)
-                    break
-                else:
-                    # at this point next is before "now", and next+1 is after "now"
-                    pre_ts, pre_data = secondaries[i][0]
-                    post_ts, post_data = secondaries[i][1]
-                    if abs(pre_ts - ts) < max_gap_ns and abs(post_ts - ts) < max_gap_ns:
-                        data = interpolate(pre_ts, pre_data, ts, post_ts, post_data)
-                        interpolated.append(data)
-                    elif abs(pre_ts - ts) < max_gap_ns:
-                        interpolated.append(pre_data)
-                    elif abs(post_ts - ts) < max_gap_ns:
-                        interpolated.append(post_data)
-                    break
-            if len(interpolated) != i + 1:
-                break
-        if len(interpolated) != len(secondaries):
-            continue
-        result.append((ts, event, interpolated))
-
-    return result
-
 def _flatten(arr):
     return np.reshape(arr, -1)
 
+# Configure which data is available to the robot in a single processing frame
+# The first entry is the one that we will interpolate over
+# 0 means use the most recent entry for that variable
+# 1 means provide the next subsequent entry
+# 2 means provides the subsequent 2 entries
+# -2 means provies the prior 2 entries
+DATAFRAME_CONFIG = {
+    "processed_img": 0,
+    "yolo_reward": -1,
 
-DATAFRAME_COLUMNS = [
-    # The first entry is the one that we will interpolate over
-    "yolo_intermediate",
-    "reward",
-
-    # pan, tilt in steps, (1024 steps = 300 degrees)
-    "dynamixel_cur_state",
-    "dynamixel_command_state",
+    # indicates rewards from the controlling app
+    "reward_button": -1,
+    "reward_button_connected": -1,
 
     # commanded forward speed, rotational speed
-    "cmd_vel",
+    "cmd_vel": 1,
+
+    # commanded head pan/tilt
+    "head_cmd": 1,
+
+    # Last few frames of audio signal
+    "audio": -5,
 
     # Each wheels actual speed in rotations per second
-    "odrive_feedback",
+    "odrive_feedback": -1,
+
+    # Head actual motor feedbacks
+    "head_feedback": -1,
 
     # head gyro rate, in radians per second
-    "head_gyro",
+    "head_gyro": -5,
 
     # head acceleration, in meters per second
-    "head_accel",
+    "head_accel": -5,
 
     # robot bus voltage, in Volts
-    "vbus",
+    "vbus": -1,
+}
 
-    # indicates reward from stop button (0 = unpressed, -1 = pressed)
-    "punishment",
-]
+
+@dataclass()
+class Entry:
+    observation: np.ndarray
+    action: np.ndarray
+    reward: float
 
 
 def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
@@ -157,6 +120,17 @@ def _read_mmapped_bag(bag_cache_name: str) -> pd.DataFrame:
     return table.to_pandas()
 
 
+def get_timed_entry(entries: Dict, timestamp: int, offset: int):
+    if offset <= 0:
+        if offset == 0:
+            offset = -1
+        keys = sorted(key for key in entries.keys() if key <= timestamp)
+        return entries[keys[abs(offset) - 1]]
+    else:
+        keys = sorted(key for key in entries.keys() if key > timestamp)
+        return entries[keys[offset - 1]]
+
+
 def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str,
                     interpolation_slice: int,
                     reward_delay_ms: int,
@@ -179,6 +153,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
                   '/cmd_vel',
                   '/head_cmd',
                   '/reward_button',
+                  '/reward_button_connected',
                   '/vbus']
 
     for topic, msg, ts in bag.read_messages(ros_topics):
@@ -196,21 +171,13 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
             # Convert list of byte arrays to numpy array
             image_np = np.array(img)
             image_np = image_np.reshape((msg.height, msg.width, -1))
-            bboxes, intermediate = get_onnx_prediction(get_onnx_sess(backbone_onnx_path), image_np)
-            reward = reward_func(bboxes)
-
-            if np.isnan(intermediate).any():
-                print(f"Invalid YOLO output in bag: {bag_file} at ts {ts}")
-                img_mode = 'L' if "infra" in opt.camera_topic else 'RGB'
-                png.from_array(img, mode=img_mode).save(os.path.join(opt.cache_dir, f"error_{os.path.basename(bag_file)}_{ts}.png"))
-                continue
-
-            entries["yolo_intermediate"][full_ts] = _flatten(intermediate)[::interpolation_slice]
-            entries["reward"][full_ts + reward_delay_ms * 1000000] = reward
+            entries["processed_img"][full_ts] = image_np
         elif topic == '/audio':
             entries["audio"][full_ts] = np.frombuffer(msg.data, dtype=np.float32)
         elif topic == '/reward_button':
-            entries["punishment"][full_ts + punish_backtrack_ms * 1000000] = np.array([msg.data])
+            entries["reward_button"][full_ts + punish_backtrack_ms * 1000000] = np.array([msg.data])
+        elif topic == '/reward_button_connected':
+            entries["reward_button_connected"][full_ts] = np.array([msg.data])
         elif topic == "/head_feedback":
             entries["head_feedback"][full_ts] = np.array([msg.cur_angle_pitch,
                                                           msg.cur_angle_yaw,
@@ -242,8 +209,58 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
         else:
             raise KeyError("Unexpected rosbag topic")
 
-    interpolated = interpolate_events(entries["yolo_intermediate"], [entries[key] for key in DATAFRAME_COLUMNS[1:]],
-                                      max_gap_ns=1000 * 1000 * 1000)
+    max_gap_ns = 1000 * 1000 * 1000
+
+    interpolation_time_master = list(DATAFRAME_CONFIG.keys())[0]
+    primary = sorted(entries[interpolation_time_master].items())
+    processed_entries = []
+
+    for ts, event in primary:
+        bboxes, intermediate = get_onnx_prediction(get_onnx_sess(backbone_onnx_path), image_np)
+        reward = reward_func(bboxes)
+
+        if np.isnan(intermediate).any():
+            print(f"Invalid YOLO output in bag: {bag_file} at ts {ts}")
+            img_mode = 'L' if "infra" in opt.camera_topic else 'RGB'
+            png.from_array(img, mode=img_mode).save(os.path.join(opt.cache_dir, f"error_{os.path.basename(bag_file)}_{ts}.png"))
+            continue
+
+        yolo_intermediate = _flatten(intermediate)[::interpolation_slice]
+
+        last_head_feedback = get_timed_entry(entries["head_feedback"], ts, -1)
+        last_odrive_feedback = get_timed_entry(entries["odrive_feedback"], ts, -1)
+        last_vbus = get_timed_entry(entries["vbus"], ts, -1)
+        last_head_gyro = get_timed_entry(entries["head_gyro"], ts, -1)
+        last_head_accel = get_timed_entry(entries["head_accel"], ts, -1)
+
+        next_head_cmd = get_timed_entry(entries["head_cmd"], ts, 1)
+        next_cmd_vel = get_timed_entry(entries["cmd_vel"], ts, 1)
+
+        observation = np.concatenate([
+            [normalize_output(last_head_feedback[1], PAN_LOW, PAN_HIGH), normalize_output(last_head_feedback[0], TILT_LOW, TILT_HIGH)],
+            last_head_gyro / 10.0,
+            # Divide radians/sec by ten to center around 0 closer
+            last_head_accel / 10.0,  # Divide m/s by 10, and center the y axis
+            last_odrive_feedback[0:2],  # Only the actual vel, not the commanded vel
+            last_vbus - 14.0,  # Volts different from ~50% charge
+            yolo_intermediate])
+
+        action = np.concatenate([
+            next_cmd_vel,
+            [normalize_output(next_head_cmd[1], PAN_LOW, PAN_HIGH), normalize_output(next_head_cmd[0], TILT_LOW, TILT_HIGH)],
+        ])
+
+
+
+        processed_entries.append(Entry(
+            observation=observation,
+            reward=reward,
+            action=action,
+        ))
+
+
+    # interpolated = interpolate_events(entries["yolo_intermediate"], [entries[key] for key in DATAFRAME_COLUMNS[1:]],
+    #                                   )
 
     df = pd.DataFrame.from_records([[ts, event, *interps] for (ts, event, interps) in interpolated],
                                     columns=["ts", *DATAFRAME_COLUMNS], index="ts")
