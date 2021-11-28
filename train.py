@@ -79,7 +79,7 @@ def read_bag_into_numpy(bag_file: str,
     bag = rosbag.Bag(bag_file, 'r')
     entries = defaultdict(dict)
 
-    ros_topics = [opt.camera_topic,
+    ros_topics = ['/processed_img',
                   '/audio',
                   '/camera/accel/sample',
                   '/camera/gyro/sample',
@@ -94,7 +94,7 @@ def read_bag_into_numpy(bag_file: str,
     for topic, msg, ts in bag.read_messages(ros_topics):
         full_ts = ts.nsecs + ts.secs * 1000000000
 
-        if topic == opt.camera_topic:
+        if topic == '/processed_img':
             img = []
             for i in range(0, len(msg.data), msg.step):
                 img.append(np.frombuffer(msg.data[i:i + msg.step], dtype=np.uint8))
@@ -260,7 +260,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--bag-dir', type=str, help='directory with bag files to use for training data')
     parser.add_argument("--onnx", type=str, default='./yolov5s_v5_0_op11_rossac.onnx', help='onnx weights path for intermediate stage')
-    parser.add_argument("--camera_topic", default='/processed_img')
     parser.add_argument("--reward", default='prioritize_centered_spoons_with_nms')
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
     parser.add_argument('--batch-size', type=int, default=128, help='number of samples per training step')
