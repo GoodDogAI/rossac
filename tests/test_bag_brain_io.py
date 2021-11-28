@@ -4,6 +4,7 @@ import unittest
 import numpy as np
 import onnxruntime as rt
 
+from train import read_bag_into_numpy, create_dataset
 from yolo_reward import get_onnx_prediction, non_max_supression, detect_yolo_bboxes
 
 
@@ -41,6 +42,54 @@ class TestBagYoloIntermediate(unittest.TestCase):
             print("Diff: ", np.linalg.norm(out - intermediate))
             np.testing.assert_almost_equal(out, intermediate, decimal=4)
 
+class TestBagBrainInputs(unittest.TestCase):
+    test_bag = "/home/jake/bagfiles/test_bags/test_intermediate_values1.bag"
+    onnx_path = os.path.join(os.path.dirname(__file__), "..", "yolov5s_trt.onnx")
+
+    def test_yolo_brain_inputs(self):
+        bag = rosbag.Bag(self.test_bag, "r")
+        onnx_sess = rt.InferenceSession(self.onnx_path)
+
+        inputs = {}
+
+        for topic, msg, ts in bag.read_messages(["/brain_inputs"]):
+            full_ts = ts.nsecs + ts.secs * 1000000000
+            inputs[full_ts] = np.array(msg.data)
+
+        bag_entries = read_bag_into_numpy(self.test_bag,
+                                          reward_delay_ms=0,
+                                          punish_backtrack_ms=0)
+
+        dataset_entries = create_dataset(bag_entries,
+                                         backbone_onnx_path=self.onnx_path,
+                                         reward_func_name="prioritize_centered_spoons_with_nms",
+                                         interpolation_slice=157)
+
+        print(f"Loaded {len(inputs)} inputs")
+
+        for ts, inputs in inputs.items():
+            matching_ds = sorted([ds for ds in dataset_entries if ds.ts < ts], key=lambda ds: -ds.ts)
+
+            if not matching_ds:
+                continue
+
+            ds = matching_ds[0]
+            last_inputs = inputs[-990:]
+
+            diffs = last_inputs - ds.observation
+
+
+
+
+        # Check that inputs match outputs through
+        # for inp, out in zip(inputs, outputs):
+        #     bboxes, intermediate = get_onnx_prediction(onnx_sess, inp)
+        #     intermediate = intermediate.reshape(-1)
+        #     nms_boxes = non_max_supression(bboxes)
+        #     detections = detect_yolo_bboxes(nms_boxes, threshold=0.25)
+        #
+        #     print("Diff: ", np.linalg.norm(out - intermediate))
+        #     np.testing.assert_almost_equal(out, intermediate, decimal=4)
 
 
 class TestBagBrainIO(unittest.TestCase):
