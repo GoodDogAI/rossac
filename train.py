@@ -11,7 +11,7 @@ import glob
 import rosbag
 
 from typing import Dict, Any, Callable, List
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
@@ -50,53 +50,6 @@ def get_onnx_sess(onnx_path: str) -> rt.InferenceSession:
 def _flatten(arr):
     return np.reshape(arr, -1)
 
-# Configure which data is available to the robot in a single processing frame
-# The first entry is the one that we will interpolate over
-# 0 means use the most recent entry for that variable
-# 1 means provide the next subsequent entry
-# 2 means provides the subsequent 2 entries
-# -2 means provies the prior 2 entries
-DATAFRAME_CONFIG = {
-    "processed_img": 0,
-    "yolo_reward": -1,
-
-    # indicates rewards from the controlling app
-    "reward_button": -1,
-    "reward_button_connected": -1,
-
-    # commanded forward speed, rotational speed
-    "cmd_vel": 1,
-
-    # commanded head pan/tilt
-    "head_cmd": 1,
-
-    # Last few frames of audio signal
-    "audio": -5,
-
-    # Each wheels actual speed in rotations per second
-    "odrive_feedback": -1,
-
-    # Head actual motor feedbacks
-    "head_feedback": -1,
-
-    # head gyro rate, in radians per second
-    "head_gyro": -5,
-
-    # head acceleration, in meters per second
-    "head_accel": -5,
-
-    # robot bus voltage, in Volts
-    "vbus": -1,
-}
-
-
-@dataclass()
-class Entry:
-    observation: np.ndarray
-    action: np.ndarray
-    reward: float
-
-
 def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
              interpolation_slice: int,
              reward_delay_ms: int,
@@ -120,30 +73,12 @@ def _read_mmapped_bag(bag_cache_name: str) -> pd.DataFrame:
     return table.to_pandas()
 
 
-def get_timed_entry(entries: Dict, timestamp: int, offset: int):
-    if offset <= 0:
-        if offset == 0:
-            offset = -1
-        keys = sorted(key for key in entries.keys() if key <= timestamp)
-        return entries[keys[abs(offset) - 1]]
-    else:
-        keys = sorted(key for key in entries.keys() if key > timestamp)
-        return entries[keys[offset - 1]]
-
-
-def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str,
-                    interpolation_slice: int,
-                    reward_delay_ms: int,
-                    punish_backtrack_ms: int):
+def read_bag_into_numpy(bag_file: str,
+                        reward_delay_ms: int,
+                        punish_backtrack_ms: int) -> Dict[str, Dict[int, np.ndarray]]:
     bag = rosbag.Bag(bag_file, 'r')
     entries = defaultdict(dict)
-    reward_func = getattr(yolo_reward, reward_func_name)
 
-    # If you are the first bag in a series, don't output any entries until you received one message from each channel
-    # This is because it can take some time for everything to fully initialize (ex. if building tensorrt models),
-    # and we don't want bogus data points.
-    wait_for_each_msg = bag_file.endswith("_0.bag")
-    received_topic = defaultdict(bool)
     ros_topics = [opt.camera_topic,
                   '/audio',
                   '/camera/accel/sample',
@@ -158,10 +93,6 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
 
     for topic, msg, ts in bag.read_messages(ros_topics):
         full_ts = ts.nsecs + ts.secs * 1000000000
-
-        received_topic[topic] = True
-        if wait_for_each_msg and not all(received_topic[topic] for topic in ros_topics):
-            continue
 
         if topic == opt.camera_topic:
             img = []
@@ -209,61 +140,113 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
         else:
             raise KeyError("Unexpected rosbag topic")
 
-    max_gap_ns = 1000 * 1000 * 1000
+    return entries
 
-    interpolation_time_master = list(DATAFRAME_CONFIG.keys())[0]
+
+class TimedEntryNotFound(Exception):
+    pass
+
+
+def get_timed_entry(entries: Dict, timestamp: int, offset: int) -> np.ndarray:
+    if offset <= 0:
+        if offset == 0:
+            offset = -1
+        keys = sorted(key for key in entries.keys() if key <= timestamp)
+        offset = abs(offset) - 1
+        if offset > len(keys) - 1:
+            raise TimedEntryNotFound()
+
+        return entries[keys[offset]]
+    else:
+        keys = sorted(key for key in entries.keys() if key > timestamp)
+        if offset > len(keys):
+            raise TimedEntryNotFound()
+        return entries[keys[offset - 1]]
+
+
+@dataclass()
+class DatasetEntry:
+    ts: int
+    observation: np.ndarray
+    action: np.ndarray
+    reward: float
+    done: bool
+
+
+def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
+                   backbone_onnx_path: str, reward_func_name: str, interpolation_slice: int) -> List[DatasetEntry]:
+    reward_func = getattr(yolo_reward, reward_func_name)
+    interpolation_time_master = "processed_img"
     primary = sorted(entries[interpolation_time_master].items())
     processed_entries = []
 
-    for ts, event in primary:
+    for ts, image_np in primary:
         bboxes, intermediate = get_onnx_prediction(get_onnx_sess(backbone_onnx_path), image_np)
         reward = reward_func(bboxes)
 
         if np.isnan(intermediate).any():
-            print(f"Invalid YOLO output in bag: {bag_file} at ts {ts}")
-            img_mode = 'L' if "infra" in opt.camera_topic else 'RGB'
-            png.from_array(img, mode=img_mode).save(os.path.join(opt.cache_dir, f"error_{os.path.basename(bag_file)}_{ts}.png"))
-            continue
+            raise ValueError("Received NaN in yolo reward calculation")
 
         yolo_intermediate = _flatten(intermediate)[::interpolation_slice]
 
-        last_head_feedback = get_timed_entry(entries["head_feedback"], ts, -1)
-        last_odrive_feedback = get_timed_entry(entries["odrive_feedback"], ts, -1)
-        last_vbus = get_timed_entry(entries["vbus"], ts, -1)
-        last_head_gyro = get_timed_entry(entries["head_gyro"], ts, -1)
-        last_head_accel = get_timed_entry(entries["head_accel"], ts, -1)
+        try:
+            last_head_feedback = get_timed_entry(entries["head_feedback"], ts, -1)
+            last_odrive_feedback = get_timed_entry(entries["odrive_feedback"], ts, -1)
+            last_vbus = get_timed_entry(entries["vbus"], ts, -1)
+            last_head_gyro = get_timed_entry(entries["head_gyro"], ts, -1)
+            last_head_accel = get_timed_entry(entries["head_accel"], ts, -1)
 
-        next_head_cmd = get_timed_entry(entries["head_cmd"], ts, 1)
-        next_cmd_vel = get_timed_entry(entries["cmd_vel"], ts, 1)
+            next_head_cmd = get_timed_entry(entries["head_cmd"], ts, 1)
+            next_cmd_vel = get_timed_entry(entries["cmd_vel"], ts, 1)
+        except TimedEntryNotFound:
+            continue
 
         observation = np.concatenate([
-            [normalize_output(last_head_feedback[1], PAN_LOW, PAN_HIGH), normalize_output(last_head_feedback[0], TILT_LOW, TILT_HIGH)],
-            last_head_gyro / 10.0,
-            # Divide radians/sec by ten to center around 0 closer
-            last_head_accel / 10.0,  # Divide m/s by 10, and center the y axis
+            [normalize_output(last_head_feedback[1], PAN_LOW, PAN_HIGH),
+             normalize_output(last_head_feedback[0], TILT_LOW, TILT_HIGH)],
+            last_head_gyro / 10.0,  # Divide radians/sec by ten to center around 0 closer
+            last_head_accel / 10.0,  # Divide m/s by 10
             last_odrive_feedback[0:2],  # Only the actual vel, not the commanded vel
             last_vbus - 14.0,  # Volts different from ~50% charge
             yolo_intermediate])
 
         action = np.concatenate([
             next_cmd_vel,
-            [normalize_output(next_head_cmd[1], PAN_LOW, PAN_HIGH), normalize_output(next_head_cmd[0], TILT_LOW, TILT_HIGH)],
+            [normalize_output(next_head_cmd[1], PAN_LOW, PAN_HIGH),
+             normalize_output(next_head_cmd[0], TILT_LOW, TILT_HIGH)],
         ])
 
-
-
-        processed_entries.append(Entry(
+        processed_entries.append(DatasetEntry(
+            ts=ts,
             observation=observation,
             reward=reward,
             action=action,
+            done=False
         ))
 
+    return processed_entries
 
-    # interpolated = interpolate_events(entries["yolo_intermediate"], [entries[key] for key in DATAFRAME_COLUMNS[1:]],
-    #                                   )
 
-    df = pd.DataFrame.from_records([[ts, event, *interps] for (ts, event, interps) in interpolated],
-                                    columns=["ts", *DATAFRAME_COLUMNS], index="ts")
+def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str,
+                    interpolation_slice: int,
+                    reward_delay_ms: int,
+                    punish_backtrack_ms: int):
+
+    # Read all of the relevant data inside a bag file into a bunch of cleaned up numpy arrays
+    bag_entries = read_bag_into_numpy(bag_file,
+                                      reward_delay_ms=reward_delay_ms,
+                                      punish_backtrack_ms=punish_backtrack_ms)
+
+    # Convert those numpy arrays into a consistent observation, reward, and action vector
+    dataset_entries = create_dataset(bag_entries,
+                                     backbone_onnx_path=backbone_onnx_path,
+                                     reward_func_name=reward_func_name,
+                                     interpolation_slice=interpolation_slice)
+
+
+    # Save those into a Dataframe
+    df = pd.DataFrame.from_records([asdict(ds) for ds in dataset_entries],
+                                    columns=["ts", "observation", "action", "reward", "done"], index="ts")
 
     # Convert from pandas to Arrow
     table = pa.Table.from_pandas(df)
