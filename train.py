@@ -35,7 +35,8 @@ from dump_onnx import export
 
 DEFAULT_MAX_GAP_SECONDS = 5
 
-DEFAULT_PUNISHMENT_MULTIPLIER = 16
+DEFAULT_PUNISHMENT_MULTIPLIER = 16.0
+DEFAULT_MANUAL_DRIVING_REWARD = 1.0
 
 SAMPLES_PER_STEP = 1024*1024
 
@@ -89,6 +90,7 @@ def read_bag_into_numpy(bag_file: str,
                   '/head_cmd',
                   '/reward_button',
                   '/reward_button_connected',
+                  '/reward_button_override_cmd_vel',
                   '/vbus']
 
     for topic, msg, ts in bag.read_messages(ros_topics):
@@ -109,6 +111,8 @@ def read_bag_into_numpy(bag_file: str,
             entries["reward_button"][full_ts + punish_backtrack_ms * 1000000] = np.array([msg.data])
         elif topic == '/reward_button_connected':
             entries["reward_button_connected"][full_ts] = np.array([msg.data])
+        elif topic == '/reward_button_override_cmd_vel':
+            entries["reward_button_override_cmd_vel"][full_ts] = np.array([msg.data])
         elif topic == "/head_feedback":
             entries["head_feedback"][full_ts] = np.array([msg.cur_angle_pitch,
                                                           msg.cur_angle_yaw,
@@ -195,6 +199,7 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
 
         try:
             last_reward_button_connection = get_timed_entry(entries["reward_button_connected"], ts, -1)
+            last_reward_button_override_cmd_vel = get_timed_entry(entries["reward_button_override_cmd_vel"], ts, -1)
             last_reward_button = get_timed_entry(entries["reward_button"], ts, -1)
 
             last_head_feedback = get_timed_entry(entries["head_feedback"], ts, -1)
@@ -213,8 +218,13 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
             continue
 
         final_reward = yolo_reward_value * opt.base_reward_scale
+
         move_penalty = abs(next_head_cmd).mean() * 0.002
         final_reward -= move_penalty
+
+        override_reward = DEFAULT_MANUAL_DRIVING_REWARD if last_reward_button_override_cmd_vel else 0.0
+        final_reward += override_reward
+
         final_reward += last_reward_button[0] * DEFAULT_PUNISHMENT_MULTIPLIER
 
         observation = np.concatenate([
