@@ -231,7 +231,7 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
         processed_entries.append(DatasetEntry(
             ts=ts,
             observation=observation,
-            reward=reward,
+            reward=final_reward,
             action=action,
             done=False
         ))
