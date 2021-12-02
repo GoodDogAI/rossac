@@ -148,10 +148,13 @@ class TimedEntryNotFound(Exception):
 
 
 def get_timed_entry(entries: Dict, timestamp: int, offset: int) -> np.ndarray:
-    if offset <= 0:
-        if offset == 0:
-            offset = -1
-        keys = sorted(key for key in entries.keys() if key <= timestamp)
+    if offset == 0:
+        if timestamp in entries:
+            return entries[timestamp]
+        else:
+            raise TimedEntryNotFound()
+    elif offset < 0:
+        keys = sorted([key for key in entries.keys() if key < timestamp], reverse=True)
         offset = abs(offset) - 1
         if offset > len(keys) - 1:
             raise TimedEntryNotFound()
@@ -182,7 +185,7 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
 
     for ts, image_np in primary:
         bboxes, intermediate = get_onnx_prediction(get_onnx_sess(backbone_onnx_path), image_np)
-        reward = reward_func(bboxes)
+        yolo_reward_value = reward_func(bboxes)
 
         if np.isnan(intermediate).any():
             raise ValueError("Received NaN in yolo reward calculation")
@@ -190,6 +193,9 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
         yolo_intermediate = _flatten(intermediate)[::interpolation_slice]
 
         try:
+            last_reward_button_connection = get_timed_entry(entries["reward_button_connected"], ts, -1)
+            last_reward_button = get_timed_entry(entries["reward_button"], ts, -1)
+
             last_head_feedback = get_timed_entry(entries["head_feedback"], ts, -1)
             last_odrive_feedback = get_timed_entry(entries["odrive_feedback"], ts, -1)
             last_vbus = get_timed_entry(entries["vbus"], ts, -1)
@@ -200,6 +206,12 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
             next_cmd_vel = get_timed_entry(entries["cmd_vel"], ts, 1)
         except TimedEntryNotFound:
             continue
+
+        if not last_reward_button_connection[0]:
+            print(f"Skipping entry {ts} because reward button app was not connected")
+            continue
+
+        final_reward = yolo_reward_value + last_reward_button[0]
 
         observation = np.concatenate([
             [normalize_output(last_head_feedback[1], PAN_LOW, PAN_HIGH),
