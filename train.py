@@ -171,6 +171,7 @@ def get_timed_entry(entries: Dict, timestamp: int, offset: int) -> np.ndarray:
 class DatasetEntry:
     ts: int
     observation: np.ndarray
+    observation_yolo_intermediate_size: int
     action: np.ndarray
     reward: float
     done: bool
@@ -211,7 +212,10 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
             print(f"Skipping entry {ts} because reward button app was not connected")
             continue
 
-        final_reward = yolo_reward_value + last_reward_button[0]
+        final_reward = yolo_reward_value * opt.base_reward_scale
+        move_penalty = abs(next_head_cmd).mean() * 0.002
+        final_reward -= move_penalty
+        final_reward += last_reward_button[0] * DEFAULT_PUNISHMENT_MULTIPLIER
 
         observation = np.concatenate([
             [normalize_output(last_head_feedback[1], PAN_LOW, PAN_HIGH),
@@ -231,10 +235,14 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
         processed_entries.append(DatasetEntry(
             ts=ts,
             observation=observation,
+            observation_yolo_intermediate_size=yolo_intermediate.shape[0],
             reward=final_reward,
             action=action,
             done=False
         ))
+
+    # Set the last entry done flag to true
+    processed_entries[-1].done = True
 
     return processed_entries
 
@@ -258,7 +266,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
 
     # Save those into a Dataframe
     df = pd.DataFrame.from_records([asdict(ds) for ds in dataset_entries],
-                                    columns=["ts", "observation", "action", "reward", "done"], index="ts")
+                                    columns=["ts", "observation", "observation_yolo_intermediate_size", "action", "reward", "done"], index="ts")
 
     # Convert from pandas to Arrow
     table = pa.Table.from_pandas(df)
@@ -359,21 +367,9 @@ if __name__ == '__main__':
 
     env = env_fn()
 
-    def normalize_pantilt(pantilt):
-        return env.normalize_pan(pantilt[0, np.newaxis]), env.normalize_tilt(pantilt[1, np.newaxis])
-
-    def make_observation(interpolated_entry):
-        pan_curr, tilt_curr = normalize_pantilt(interpolated_entry.dynamixel_cur_state)
-        return np.concatenate([pan_curr, tilt_curr,
-                               interpolated_entry.head_gyro / 10.0,  # Divide radians/sec by ten to center around 0 closer
-                               interpolated_entry.head_accel / 10.0,  # Divide m/s by 10, and center the y axis
-                               interpolated_entry.odrive_feedback[0:2],  # Only the actual vel, not the commanded vel
-                               interpolated_entry.vbus - 27.0,  # Volts different from ~50% charge
-                               interpolated_entry.yolo_intermediate])
-
     example_entry = all_entries.iloc[0]
-    backbone_data_size = example_entry.yolo_intermediate.shape[0]
-    example_observation = make_observation(example_entry)
+    backbone_data_size = example_entry.observation_yolo_intermediate_size
+    example_observation = example_entry.observation
     dropout = SplitDropout([example_observation.shape[0]-backbone_data_size, backbone_data_size],
                            [0.05, opt.dropout])
     sac = SoftActorCritic(env_fn, replay_size=opt.max_samples, device=device, dropout=dropout,
@@ -390,94 +386,56 @@ if __name__ == '__main__':
 
     num_samples = min(len(all_entries)-1, opt.max_samples)
 
-    used = [False for _ in range(num_samples + 1)]
+    def ts_from_seconds(seconds):
+        return int(seconds * 1000000000)
+
+    MAX_TS_DIFF = ts_from_seconds(0.20)
 
     nans = 0
     oobs = 0
     dones = 0
+    lstm_history_count = 0
 
-    def ts_from_seconds(seconds):
-        return int(seconds * 1000000000)
+    for i in tqdm(range(num_samples)):
+        entry = all_entries.iloc[i]
+        next_entry = all_entries.iloc[i + 1]
 
-    MIN_TS_DIFF = ts_from_seconds(0.47)
-    MAX_TS_DIFF = ts_from_seconds(0.75)
+        obs = entry.observation
+        future_obs = next_entry.observation
 
-    t = tqdm(total=num_samples)
-    loaded = 0
+        if np.isnan(obs).any() or np.isnan(future_obs).any() or np.isnan(entry.reward).any():
+            nans += 1
+            continue
 
-    threads = 0
-    while not all(used[:-1]):
-        threads += 1
-        last_terminated = False
-        lstm_history_count = 0
-        last_ts = None
-        i = 0
-        while i < num_samples:
-            if used[i]:
-                i += 1
-                continue
+        if obs.max() > 1000 or future_obs.max() > 1000:
+            oobs += 1
+            continue
 
-            used[i] = True
-            loaded += 1
-            t.update()
+        if abs(next_entry.name - entry.name) > MAX_TS_DIFF:
+            lstm_history_count = 0
+            continue
 
-            entry = all_entries.iloc[i]
-            ts = entry.name
-            i += 1
-            while i < num_samples and (all_entries.iloc[i].name < ts + MIN_TS_DIFF or used[i]):
-                i += 1
-            if i >= num_samples:
-                continue
-            next_entry = all_entries.iloc[i]
-            if next_entry.name >= ts + MAX_TS_DIFF:
-                lstm_history_count = 0
-                continue
+        if entry.done:
+            lstm_history_count = 0
+            continue
 
-            if lstm_history_count >= opt.max_lookback:
-                lstm_history_count -= 1
+        if next_entry.done:
+            dones += 1
 
-            pan_command, tilt_command = normalize_pantilt(entry.dynamixel_command_state)
-            pan_curr, tilt_curr = normalize_pantilt(entry.dynamixel_cur_state)
+        if lstm_history_count >= opt.max_lookback:
+            lstm_history_count -= 1
 
-            move_penalty = abs(entry.cmd_vel).mean() * 0.002
-            pantilt_penalty = float((abs(pan_command - pan_curr) + abs(tilt_command - tilt_curr)) * 0.001)
-            if move_penalty + pantilt_penalty > 10:
-                print("WARNING: high move penalty!")
-            reward = entry.reward * opt.base_reward_scale
-            reward -= move_penalty + pantilt_penalty
-            reward += next_entry.punishment * DEFAULT_PUNISHMENT_MULTIPLIER
-
-            obs = make_observation(entry)
-            future_obs = make_observation(next_entry)
-
-            if np.isnan(obs).any() or np.isnan(future_obs).any() or np.isnan(reward).any():
-                nans += 1
-                continue
-
-            if obs.max() > 1000 or future_obs.max() > 1000:
-                oobs += 1
-                continue
-
-            terminated = next_entry.punishment < -0.0
-            if terminated and last_terminated:
-                continue
-            last_terminated = terminated
-            if terminated:
-                dones += 1
-
-            lstm_history_count += 1
-            sac.replay_buffer.store(obs=obs,
-                act=np.concatenate([entry.cmd_vel, pan_command, tilt_command]),
-                rew=reward,
-                next_obs=future_obs,
-                lstm_history_count=lstm_history_count,
-                done=terminated)
-
-    t.close()
+        lstm_history_count += 1
+        sac.replay_buffer.store(obs=obs,
+                                act=entry.action,
+                                rew=entry.reward,
+                                next_obs=future_obs,
+                                lstm_history_count=lstm_history_count,
+                                done=next_entry.done)
 
     print("filled in replay buffer")
     print(f"Took {time.perf_counter() - start_load}")
-    print(f"NaNs in {nans} of {num_samples} samples, large obs in {oobs}, threads: {threads}")
+    print(f"NaNs in {nans} of {num_samples} samples, large obs in {oobs}")
     print(f"avg. episode len: {(num_samples + 1) / (dones + 1)}")
 
     wandb.init(project="sac-series1", entity="armyofrobots",
