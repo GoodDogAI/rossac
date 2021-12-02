@@ -4,8 +4,34 @@ import unittest
 import numpy as np
 import onnxruntime as rt
 
-from train import read_bag_into_numpy, create_dataset
+from train import read_bag_into_numpy, create_dataset, get_timed_entry, TimedEntryNotFound
 from yolo_reward import get_onnx_prediction, non_max_supression, detect_yolo_bboxes
+
+
+class TestGetTimedEntry(unittest.TestCase):
+    def test_basic(self):
+        entries = {
+            0: 1.0,
+            10: 2.0,
+            20: 3.0
+        }
+
+        self.assertEqual(get_timed_entry(entries, 0, 0), 1.0)
+        self.assertEqual(get_timed_entry(entries, 0, 1), 2.0)
+        self.assertEqual(get_timed_entry(entries, 0, 2), 3.0)
+
+        with self.assertRaises(TimedEntryNotFound):
+            get_timed_entry(entries, 0, 3)
+
+        with self.assertRaises(TimedEntryNotFound):
+            get_timed_entry(entries, 0, -1)
+
+        self.assertEqual(get_timed_entry(entries, 10, 0), 2.0)
+        self.assertEqual(get_timed_entry(entries, 10, -1), 1.0)
+        self.assertEqual(get_timed_entry(entries, 10, 1), 3.0)
+
+        with self.assertRaises(TimedEntryNotFound):
+            get_timed_entry(entries, 10, 2)
 
 
 class TestBagYoloIntermediate(unittest.TestCase):
@@ -77,9 +103,6 @@ class TestBagBrainInputs(unittest.TestCase):
             last_inputs = inputs[-990:]
 
             diffs = last_inputs - ds.observation
-
-
-
 
         # Check that inputs match outputs through
         # for inp, out in zip(inputs, outputs):
