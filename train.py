@@ -257,7 +257,10 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
         ))
 
     # Set the last entry done flag to true
-    processed_entries[-1].done = True
+    if len(processed_entries) > 0:
+        processed_entries[-1].done = True
+    else:
+        print("WARNING: Bag file contained no valid entries")
 
     return processed_entries
 
