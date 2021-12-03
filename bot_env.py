@@ -3,11 +3,6 @@ import numpy as np
 from math import inf, ceil
 from typing import Optional
 
-PAN_LOW = -35
-PAN_HIGH = 35
-TILT_LOW = -35
-TILT_HIGH = 35
-
 
 def normalize_output(val, low, high):
     return (val - low) * 2 / (high - low) - 1
@@ -17,26 +12,41 @@ def output_from_normalized(val_normalized, low, high):
 
 YOLO_OBSERVATION_SPACE = Box(low=-inf, high=inf, shape=(512 * 15 * 20,), dtype=np.float32)
 
+
 class RobotEnvironment:
     # Observation space is the yolo intermediate layer output
     observation_space = YOLO_OBSERVATION_SPACE
 
-    # Action space is the forward speed, angular rate, camera pan, and camera tilt
-    # Constants taken from randomwalk.cpp in the mainbot brain code
-    action_space = Box(low=np.array([-0.5, -0.5, PAN_LOW, TILT_LOW]),
-                       high=np.array([0.5, 0.5, PAN_HIGH, TILT_HIGH]), dtype=np.float32)
+    def __init__(self, pan_low=-35, pan_high=35, tilt_low=-35, tilt_high=35):
+        # Action space is the forward speed, angular rate, camera pan, and camera tilt
+        # Constants taken from randomwalk.cpp in the mainbot brain code
+        self.action_space = Box(low=np.array([-0.5, -0.5, pan_low, tilt_low]),
+                                high=np.array([0.5, 0.5, pan_high, tilt_high]), dtype=np.float32)
+
+    @property
+    def pan_low(self):
+        return self.action_space.low[2]
+
+    @property
+    def pan_high(self):
+        return self.action_space.high[2]
+
+    @property
+    def tilt_low(self):
+        return self.action_space.low[3]
+
+    @property
+    def tilt_high(self):
+        return self.action_space.high[3]
 
 
-class SlicedRobotEnvironment:
+class SlicedRobotEnvironment(RobotEnvironment):
     # Observation space is the yolo intermediate layer output, but sliced down every X elements
     observation_space = None
 
-    # Action space is the forward speed, angular rate, camera pan, and camera tilt
-    # Constants taken from randomwalk.cpp in the mainbot brain code
-    action_space = Box(low=np.array([-0.5, -0.5, PAN_LOW, TILT_LOW]),
-                       high=np.array([0.5, 0.5, PAN_HIGH, TILT_HIGH]), dtype=np.float32)
+    def __init__(self, slice: Optional[int]=None, **kwargs):
+        super().__init__(**kwargs)
 
-    def __init__(self, slice: Optional[int]=None):
         yolo_output_size = 512 * 15 * 20 if slice is None else ceil(512 * 15 * 20 / slice)
         pantilt_current_size = 2
         head_gyro_size = 3
@@ -44,21 +54,28 @@ class SlicedRobotEnvironment:
         odrive_feedback_size = 2
         vbus_size = 1
         total_size = (pantilt_current_size + head_gyro_size + head_accel_size
-                    + odrive_feedback_size + vbus_size + yolo_output_size)
+                     + odrive_feedback_size + vbus_size + yolo_output_size)
         self.observation_space = Box(low=-inf, high=inf, shape=(total_size,), dtype=np.float32)
 
 
-class NormalizedRobotEnvironment(SlicedRobotEnvironment):
-    action_space = Box(low=np.array([-0.5, -0.5, -1, -1]),
-                       high=np.array([+0.5, +0.5, +1, +1]), dtype=np.float32)
+class NormalizedRobotEnvironment(RobotEnvironment):
+    def __init__(self, original_env: RobotEnvironment):
+        super().__init__()
+        self.original_env = original_env
 
-    @staticmethod
-    def normalize_pan(pan): return normalize_output(pan, low=PAN_LOW, high=PAN_HIGH)
-    @staticmethod
-    def pan_from_normalized(normalized_pan):
-        return output_from_normalized(normalized_pan, low=PAN_LOW, high=PAN_HIGH)
-    @staticmethod
-    def normalize_tilt(tilt): return normalize_output(tilt, low=TILT_LOW, high=TILT_HIGH)
-    @staticmethod
-    def tilt_from_normalized(normalized_tilt):
-        return output_from_normalized(normalized_tilt, low=TILT_LOW, high=TILT_HIGH)
+        self.observation_space = original_env.observation_space
+
+        self.action_space = Box(low=np.array([-0.5, -0.5, -1, -1]),
+                                high=np.array([+0.5, +0.5, +1, +1]), dtype=np.float32)
+
+    def normalize_pan(self, pan):
+        return normalize_output(pan, low=self.original_env.pan_low, high=self.original_env.pan_high)
+
+    def pan_from_normalized(self, normalized_pan):
+        return output_from_normalized(normalized_pan, low=self.original_env.pan_low, high=self.original_env.pan_high)
+
+    def normalize_tilt(self, tilt):
+        return normalize_output(tilt, low=self.original_env.tilt_low, high=self.original_env.tilt_high)
+
+    def tilt_from_normalized(self, normalized_tilt):
+        return output_from_normalized(normalized_tilt, low=self.original_env.tilt_low, high=self.original_env.tilt_high)

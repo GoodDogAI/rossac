@@ -25,8 +25,7 @@ import torch
 
 import tensorflow.compat.v1 as tf
 
-from bot_env import RobotEnvironment, NormalizedRobotEnvironment, normalize_output
-from bot_env import PAN_LOW, PAN_HIGH, TILT_LOW, TILT_HIGH
+from bot_env import SlicedRobotEnvironment, NormalizedRobotEnvironment, RobotEnvironment
 from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic, TorchLSTMReplayBuffer
 import yolo_reward
 from split_dropout import SplitDropout
@@ -52,6 +51,7 @@ def _flatten(arr):
     return np.reshape(arr, -1)
 
 def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
+             env: NormalizedRobotEnvironment,
              interpolation_slice: int,
              reward_delay_ms: int,
              punish_backtrack_ms: int) -> pd.DataFrame:
@@ -62,6 +62,7 @@ def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
         return _read_mmapped_bag(bag_cache_name)
     except IOError:
         write_bag_cache(bag_file, bag_cache_name, backbone_onnx_path, reward_func_name,
+                        env=env,
                         interpolation_slice=interpolation_slice,
                         reward_delay_ms=reward_delay_ms,
                         punish_backtrack_ms=punish_backtrack_ms)
@@ -182,6 +183,7 @@ class DatasetEntry:
 
 
 def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
+                   env: NormalizedRobotEnvironment,
                    backbone_onnx_path: str, reward_func_name: str, interpolation_slice: int) -> List[DatasetEntry]:
     reward_func = getattr(yolo_reward, reward_func_name)
     interpolation_time_master = "processed_img"
@@ -219,8 +221,11 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
 
         final_reward = yolo_reward_value * opt.base_reward_scale
 
-        move_penalty = abs(next_head_cmd).mean() * 0.002
+        move_penalty = abs(next_cmd_vel).mean() * 0
         final_reward -= move_penalty
+
+        look_penalty = abs(next_head_cmd).mean() * 0.002
+        final_reward -= look_penalty
 
         override_reward = DEFAULT_MANUAL_DRIVING_REWARD if last_reward_button_override_cmd_vel else 0.0
         final_reward += override_reward
@@ -228,8 +233,8 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
         final_reward += last_reward_button[0] * DEFAULT_PUNISHMENT_MULTIPLIER
 
         observation = np.concatenate([
-            [normalize_output(last_head_feedback[1], PAN_LOW, PAN_HIGH),
-             normalize_output(last_head_feedback[0], TILT_LOW, TILT_HIGH)],
+            [env.normalize_pan(last_head_feedback[1]),
+             env.normalize_tilt(last_head_feedback[0])],
             last_head_gyro / 10.0,  # Divide radians/sec by ten to center around 0 closer
             last_head_accel / 10.0,  # Divide m/s by 10
             last_odrive_feedback[0:2],  # Only the actual vel, not the commanded vel
@@ -238,8 +243,8 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
 
         action = np.concatenate([
             next_cmd_vel,
-            [normalize_output(next_head_cmd[1], PAN_LOW, PAN_HIGH),
-             normalize_output(next_head_cmd[0], TILT_LOW, TILT_HIGH)],
+            [env.normalize_pan(next_head_cmd[1]),
+             env.normalize_tilt(next_head_cmd[0])],
         ])
 
         processed_entries.append(DatasetEntry(
@@ -258,6 +263,7 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
 
 
 def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str, reward_func_name: str,
+                    env: NormalizedRobotEnvironment,
                     interpolation_slice: int,
                     reward_delay_ms: int,
                     punish_backtrack_ms: int):
@@ -269,6 +275,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
 
     # Convert those numpy arrays into a consistent observation, reward, and action vector
     dataset_entries = create_dataset(bag_entries,
+                                     env=env,
                                      backbone_onnx_path=backbone_onnx_path,
                                      reward_func_name=reward_func_name,
                                      interpolation_slice=interpolation_slice)
@@ -344,6 +351,7 @@ if __name__ == '__main__':
 
     for bag_path in glob.glob(os.path.join(opt.bag_dir, "*.bag")):
         entries = read_bag(bag_path, opt.onnx, opt.reward,
+                           env=NormalizedRobotEnvironment(SlicedRobotEnvironment(slice=backbone_slice)),
                            interpolation_slice=backbone_slice,
                            reward_delay_ms=opt.reward_delay_ms,
                            punish_backtrack_ms=opt.punish_backtrack_ms)
