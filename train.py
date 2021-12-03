@@ -365,7 +365,7 @@ if __name__ == '__main__':
             all_entries = all_entries.append(entries)
 
     print(f"Loaded {len(all_entries)} base entries")
-    env_fn = lambda: NormalizedRobotEnvironment(slice=backbone_slice)
+    env_fn = lambda: NormalizedRobotEnvironment(SlicedRobotEnvironment(slice=backbone_slice))
     replay_buffer_factory = ReplayBuffer
     if opt.max_lookback:
         replay_buffer_factory = lambda obs_dim, act_dim, size: TorchLSTMReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
