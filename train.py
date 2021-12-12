@@ -221,10 +221,10 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
 
         final_reward = yolo_reward_value * opt.base_reward_scale
 
-        move_penalty = abs(next_cmd_vel).mean() * 0
+        move_penalty = abs(next_cmd_vel).mean() * 0.0
         final_reward -= move_penalty
 
-        look_penalty = abs(next_head_cmd).mean() * 0.002
+        look_penalty = abs(next_head_cmd).mean() * 0.0
         final_reward -= look_penalty
 
         override_reward = DEFAULT_MANUAL_DRIVING_REWARD if last_reward_button_override_cmd_vel else 0.0
