@@ -363,7 +363,7 @@ if __name__ == '__main__':
     start_load = time.perf_counter()
     all_entries = None
 
-    for bag_path in glob.glob(os.path.join(opt.bag_dir, "*.bag")):
+    for bag_path in tqdm(glob.glob(os.path.join(opt.bag_dir, "*.bag"))):
         entries = read_bag(bag_path, opt.onnx, opt.reward,
                            env=NormalizedRobotEnvironment(SlicedRobotEnvironment(slice=backbone_slice)),
                            interpolation_slice=backbone_slice,
