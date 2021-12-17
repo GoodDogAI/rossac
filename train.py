@@ -94,6 +94,8 @@ def read_bag_into_numpy(bag_file: str,
                   '/reward_button_override_cmd_vel',
                   '/vbus']
 
+    num_overexposed = 0
+
     for topic, msg, ts in bag.read_messages(ros_topics):
         full_ts = ts.nsecs + ts.secs * 1000000000
 
@@ -105,6 +107,12 @@ def read_bag_into_numpy(bag_file: str,
             # Convert list of byte arrays to numpy array
             image_np = np.array(img)
             image_np = image_np.reshape((msg.height, msg.width, -1))
+            count_arr = np.bincount(_flatten(image_np))
+            if max(count_arr) > image_np.size * 0.50:
+                num_overexposed += 1
+                print(f"Found overexposed image in {bag_file} - {max(count_arr) / image_np.size:.2%}")
+                continue
+
             entries["processed_img"][full_ts] = image_np
         elif topic == '/audio':
             entries["audio"][full_ts] = np.frombuffer(msg.data, dtype=np.float32)
@@ -144,6 +152,9 @@ def read_bag_into_numpy(bag_file: str,
             entries["vbus"][full_ts] = np.array([msg.data])
         else:
             raise KeyError("Unexpected rosbag topic")
+
+    if num_overexposed > 2:
+        raise ValueError(f"Bag file {bag_file} has way too many overexposed images, something is wrong")
 
     return entries
 
