@@ -325,7 +325,6 @@ if __name__ == '__main__':
     parser.add_argument('--cache-dir', type=str, default=None, help='directory to store precomputed values')
     parser.add_argument('--epoch-steps', type=int, default=100, help='how often to save checkpoints')
     parser.add_argument('--seed', type=int, default=None, help='training seed')
-    parser.add_argument('--max-lookback', type=int, default=5, help='max amount of prior steps to feed into a network history')
     parser.add_argument('--history-indexes', type=str, default='-1,-2,-3,-5', help='which indexes to pass into the network')
     parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
     parser.add_argument('--no-mixed-precision', default=False, action="store_true", help='use full precision for training')
@@ -378,18 +377,20 @@ if __name__ == '__main__':
     print(f"Loaded {len(all_entries)} base entries")
     env_fn = lambda: NormalizedRobotEnvironment(SlicedRobotEnvironment(slice=backbone_slice))
     replay_buffer_factory = ReplayBuffer
-    if opt.max_lookback:
-        replay_buffer_factory = lambda obs_dim, act_dim, size: TorchLSTMReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
-                                                                                     size=size, device=replay_buffer_device, history_size=opt.max_lookback)
-    else:
-        replay_buffer_factory = lambda obs_dim, act_dim, size: TorchReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
-                                                                                 size=size, device=replay_buffer_device)
 
     actor_hidden_sizes = [int(s) for s in opt.actor_hidden_sizes.split(',')]
     critic_hidden_sizes = [int(s) for s in opt.critic_hidden_sizes.split(',')]
     history_indexes = [int(s) for s in opt.history_indexes.split(',')]
 
     assert history_indexes[0] == -1, "First history index needs to be -1, and will be replaced with extra_obs during SAC bellman step"
+
+    history_size = max(map(abs, history_indexes))
+    if history_size > 1:
+        replay_buffer_factory = lambda obs_dim, act_dim, size: TorchLSTMReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
+                                                                                     size=size, device=replay_buffer_device, history_size=history_size)
+    else:
+        replay_buffer_factory = lambda obs_dim, act_dim, size: TorchReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
+                                                                                 size=size, device=replay_buffer_device)
 
     actor_critic_args = {
         'actor_hidden_sizes': actor_hidden_sizes,
@@ -454,7 +455,7 @@ if __name__ == '__main__':
         if next_entry.done:
             dones += 1
 
-        if lstm_history_count >= opt.max_lookback:
+        if lstm_history_count >= history_size:
             lstm_history_count -= 1
 
         lstm_history_count += 1
@@ -498,7 +499,7 @@ if __name__ == '__main__':
     wandb.config.alpha_schedule = opt.alpha_schedule
     wandb.config.actor_hidden_sizes = opt.actor_hidden_sizes
     wandb.config.critic_hidden_sizes = opt.critic_hidden_sizes
-    wandb.config.max_lookback = opt.max_lookback
+    wandb.config.max_lookback = history_size
     wandb.config.base_reward_scale = opt.base_reward_scale
     if opt.pretrained_path:
         from pathlib import Path
@@ -563,7 +564,7 @@ if __name__ == '__main__':
 
         sample_action = sac.logger.epoch_dict['Pi'][-1][0]
         step_time = time.perf_counter() - start_time
-        print(f"\r{i:03d} Loss: Q: {lossQ:.4g}, Pi: {lossPi:.4g}. Step time: {step_time:0.3f} Sample action: {sample_action}          ",end="")
+        print(f"\r{i:03d} Loss: Q: {lossQ:.4g}, Pi: {lossPi:.4g}. Step time: {step_time:0.3f}s Sample action: {sample_action}          ",end="")
 
         checkpoint_name = f"checkpoints/sac-{wandb.run.name}-{i:05d}"
 
