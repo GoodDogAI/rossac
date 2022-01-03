@@ -47,7 +47,7 @@ class SlicedRobotEnvironment(RobotEnvironment):
     def __init__(self, slice: Optional[int]=None, **kwargs):
         super().__init__(**kwargs)
 
-        yolo_output_size = 512 * 15 * 20 if slice is None else ceil(512 * 15 * 20 / slice)
+        yolo_output_size = 1024 * 15 * 20 if slice is None else ceil(1024 * 15 * 20 / slice)
         pantilt_current_size = 2
         head_gyro_size = 3
         head_accel_size = 3
