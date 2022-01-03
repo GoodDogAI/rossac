@@ -195,7 +195,7 @@ class DatasetEntry:
 
 def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
                    env: NormalizedRobotEnvironment,
-                   backbone_onnx_path: str, reward_func_name: str, interpolation_slice: int) -> List[DatasetEntry]:
+                   backbone_onnx_path: str, reward_func_name: str, base_reward_scale: float, interpolation_slice: int) -> List[DatasetEntry]:
     reward_func = getattr(yolo_reward, reward_func_name)
     interpolation_time_master = "processed_img"
     primary = sorted(entries[interpolation_time_master].items())
@@ -230,7 +230,7 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
             print(f"Skipping entry {ts} because reward button app was not connected")
             continue
 
-        final_reward = yolo_reward_value * opt.base_reward_scale
+        final_reward = yolo_reward_value * base_reward_scale
 
         move_penalty = abs(next_cmd_vel).mean() * 0.0
         final_reward -= move_penalty
@@ -292,6 +292,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
                                      env=env,
                                      backbone_onnx_path=backbone_onnx_path,
                                      reward_func_name=reward_func_name,
+                                     base_reward_scale=opt.base_reward_scale,
                                      interpolation_slice=interpolation_slice)
 
 
