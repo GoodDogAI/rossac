@@ -310,7 +310,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--bag-dir', type=str, help='directory with bag files to use for training data')
-    parser.add_argument("--onnx", type=str, default='./yolov5s_v5_0_op11_rossac.onnx', help='onnx weights path for intermediate stage')
+    parser.add_argument("--onnx", type=str, default='./yolov5l_op11_rossac.onnx', help='onnx weights path for intermediate stage')
     parser.add_argument("--reward", default='prioritize_centered_spoons_with_nms')
     parser.add_argument('--max-gap', type=int, default=DEFAULT_MAX_GAP_SECONDS, help='max gap in seconds')
     parser.add_argument('--batch-size', type=int, default=128, help='number of samples per training step')
