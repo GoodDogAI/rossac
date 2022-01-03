@@ -12,7 +12,7 @@ from yolo_reward import detect_yolo_bboxes
 
 
 class TestYoloReward(unittest.TestCase):
-    onnx_path = os.path.join(os.path.dirname(__file__), "..", "yolov5s_trt.onnx")
+    onnx_path = os.path.join(os.path.dirname(__file__), "..", "yolov5l_op11_rossac.onnx")
 
     def setUp(self) -> None:
         self.onnx_sess = rt.InferenceSession(self.onnx_path)
@@ -77,19 +77,13 @@ class TestYoloReward(unittest.TestCase):
         nms_boxes = non_max_supression(bboxes)
         detections = detect_yolo_bboxes(nms_boxes)
 
-        self.assertEqual(len(detections), 2)
+        self.assertEqual(len(detections), 1)
 
-        self.assertEqual(detections[0].class_name, "chair")
-        self.assertAlmostEqual(detections[0].x, 5, delta=1.0)
-        self.assertAlmostEqual(detections[0].y, 395, delta=1.0)
-        self.assertAlmostEqual(detections[0].width, 103, delta=1.0)
-        self.assertAlmostEqual(detections[0].height, 85, delta=1.0)
-
-        self.assertEqual(detections[1].class_name, "person")
-        self.assertAlmostEqual(detections[1].x, 1, delta=1.0)
-        self.assertAlmostEqual(detections[1].y, 276, delta=1.0)
-        self.assertAlmostEqual(detections[1].width, 82, delta=1.0)
-        self.assertAlmostEqual(detections[1].height, 174, delta=1.0)
+        self.assertEqual(detections[0].class_name, "person")
+        self.assertAlmostEqual(detections[0].x, 1, delta=1.0)
+        self.assertAlmostEqual(detections[0].y, 277, delta=1.0)
+        self.assertAlmostEqual(detections[0].width, 82, delta=1.0)
+        self.assertAlmostEqual(detections[0].height, 167, delta=1.0)
 
     def test_indoor_image(self):
         image_np = load_png(
@@ -100,6 +94,6 @@ class TestYoloReward(unittest.TestCase):
         detections = detect_yolo_bboxes(nms_boxes)
 
         self.assertEqual(detections[0].class_name, "person")
-        self.assertAlmostEqual(detections[0].x, 313, delta=1)
+        self.assertAlmostEqual(detections[0].x, 283, delta=1)
         self.assertAlmostEqual(detections[0].y, 381, delta=1)
 
