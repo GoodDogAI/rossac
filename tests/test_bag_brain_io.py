@@ -38,6 +38,7 @@ class TestGetTimedEntry(unittest.TestCase):
 class TestBagYoloIntermediate(unittest.TestCase):
     test_bag = "/home/jake/bagfiles/test_bags/yolov5l_intermediates.bag"
     onnx_path = os.path.join(os.path.dirname(__file__), "..", "yolov5l_6_0_op11_rossac.onnx")
+    pt_path = os.path.join(os.path.dirname(__file__), "..", "yolov5l_6_0.torchscript.pt")
 
     def test_yolo_color(self):
         bag = rosbag.Bag(self.test_bag, "r")

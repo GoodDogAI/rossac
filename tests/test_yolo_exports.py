@@ -13,8 +13,11 @@ from yolo_reward import get_onnx_prediction, convert_hwc_to_nchw, non_max_supres
 from yolo_reward import detect_yolo_bboxes
 
 
-def get_pt_gpu_prediction(pt: torch.ScriptModule, image_np: np.ndarray) -> np.ndarray:
+def get_pt_gpu_prediction(pt: torch.ScriptModule, image_np: np.ndarray, use_fp16: bool=False) -> np.ndarray:
     image_np = torch.from_numpy(convert_hwc_to_nchw(image_np))
+
+    if use_fp16:
+        image_np = image_np.to(torch.float16)
 
     device = torch.device("cuda")
     pred = pt(image_np.to(device))
@@ -24,8 +27,8 @@ def get_pt_gpu_prediction(pt: torch.ScriptModule, image_np: np.ndarray) -> np.nd
 
 
 class TestYoloExport(unittest.TestCase):
-    onnx_path = os.path.join(os.path.dirname(__file__), "..", "yolov5l_op11_rossac.onnx")
-    pt_path = os.path.join(os.path.dirname(__file__), "..", "yolov5l.torchscript.pt")
+    onnx_path = os.path.join(os.path.dirname(__file__), "..", "yolov5l_6_0_op11_rossac.onnx")
+    pt_path = os.path.join(os.path.dirname(__file__), "..", "yolov5l_6_0.torchscript.pt")
 
     def setUp(self) -> None:
         self.image_np = load_png(os.path.join(os.path.dirname(__file__), "test_data", "chair_person.png"))
@@ -41,6 +44,9 @@ class TestYoloExport(unittest.TestCase):
         pt_gpu_sess = torch.jit.load(self.pt_path, gpu_device)
 
         pt_gpu_pred = get_pt_gpu_prediction(pt_gpu_sess, self.image_np)
+
+        pt_fp16_sess = pt_gpu_sess.half()
+        pt_fp16_pred = get_pt_gpu_prediction(pt_fp16_sess, self.image_np, use_fp16=True)
 
         np.testing.assert_almost_equal(onnx_pred[0], pt_pred[0].numpy(), decimal=2)
         np.testing.assert_almost_equal(onnx_pred[0], pt_gpu_pred, decimal=2)
@@ -71,8 +77,8 @@ class TestYoloExport(unittest.TestCase):
 
         self.assertEqual(c, {
             "tv": 1,
-            "potted plant": 1,
-            "book": 5,
-            "teddy bear": 1,
+            "potted plant": 2,
+            "book": 8,
+            "vase": 1,
             "chair": 1,
         })
