@@ -16,7 +16,7 @@ input_binding_name = "images"
 
 # Get these from exploring your ONNX file, the first one should be the classifications, all concatenated together
 # The second one should be your intermediate output layer
-output_binding_names = ["output", "603"]
+output_binding_names = ["output", "532"]
 
 # YOLO Specific parameters
 input_h = 480
