@@ -595,15 +595,17 @@ if __name__ == '__main__':
                 print(action_samples, file=samples_file)
                 print(logstd_samples, file=samples_file)
 
-        if i > 0 and epoch_ends:
+        if epoch_ends:
             export(sac.ac, device, checkpoint_name + '.onnx', sac.env)
-            sac.save(opt.checkpoint_path,
-                     run_name=wandb.run.name,
-                     run_id=wandb.run.id,
-                     step=i,
-                     seed=opt.seed)
 
-            shutil.copyfile(src=opt.checkpoint_path, dst=checkpoint_name + '.tar')
+            if i > 0:
+                sac.save(opt.checkpoint_path,
+                         run_name=wandb.run.name,
+                         run_id=wandb.run.id,
+                         step=i,
+                         seed=opt.seed)
+
+                shutil.copyfile(src=opt.checkpoint_path, dst=checkpoint_name + '.tar')
 
             print()
             print("saved " + checkpoint_name)
