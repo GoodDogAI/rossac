@@ -161,5 +161,6 @@ def get_onnx_prediction(sess: rt.InferenceSession, image_np: np.ndarray) -> List
     })
 
     # Returns (detections, intermediate_layer)
-    return pred
+    detections, intermediate = pred
+    return [detections, intermediate]
 
