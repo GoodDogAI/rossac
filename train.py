@@ -54,9 +54,10 @@ def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
              env: NormalizedRobotEnvironment,
              interpolation_slice: int,
              reward_delay_ms: int,
+             base_reward_scale: float,
              punish_backtrack_ms: int) -> pd.DataFrame:
     print(f"Opening {bag_file}")
-    bag_cache_name = os.path.join(opt.cache_dir, f"{os.path.basename(bag_file)}_{reward_func_name}_{interpolation_slice}slice+{reward_delay_ms}ms_-{punish_backtrack_ms}ms.arrow")
+    bag_cache_name = os.path.join(opt.cache_dir, f"{os.path.basename(bag_file)}_{reward_func_name}_{base_reward_scale}s_{interpolation_slice}slice+{reward_delay_ms}ms_-{punish_backtrack_ms}ms.arrow")
 
     try:
         return _read_mmapped_bag(bag_cache_name)
@@ -65,6 +66,7 @@ def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
                         env=env,
                         interpolation_slice=interpolation_slice,
                         reward_delay_ms=reward_delay_ms,
+                        base_reward_scale=base_reward_scale,
                         punish_backtrack_ms=punish_backtrack_ms)
         return _read_mmapped_bag(bag_cache_name)
 
@@ -280,6 +282,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
                     env: NormalizedRobotEnvironment,
                     interpolation_slice: int,
                     reward_delay_ms: int,
+                    base_reward_scale: float,
                     punish_backtrack_ms: int):
 
     # Read all of the relevant data inside a bag file into a bunch of cleaned up numpy arrays
@@ -292,7 +295,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
                                      env=env,
                                      backbone_onnx_path=backbone_onnx_path,
                                      reward_func_name=reward_func_name,
-                                     base_reward_scale=opt.base_reward_scale,
+                                     base_reward_scale=base_reward_scale,
                                      interpolation_slice=interpolation_slice)
 
 
@@ -368,6 +371,7 @@ if __name__ == '__main__':
                            env=NormalizedRobotEnvironment(SlicedRobotEnvironment(slice=backbone_slice)),
                            interpolation_slice=backbone_slice,
                            reward_delay_ms=opt.reward_delay_ms,
+                           base_reward_scale=opt.base_reward_scale,
                            punish_backtrack_ms=opt.punish_backtrack_ms)
 
         if all_entries is None:
