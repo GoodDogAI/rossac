@@ -22,7 +22,7 @@ onnxruntime-gpu
 torchvision>=0.10.0
 
 # For getting nvidia's latest NEMO audio models
-nemo_toolkit['all']
+nemo_toolkit
 
 # For reporting and saving training logs
 wandb

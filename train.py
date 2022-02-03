@@ -6,26 +6,25 @@ import shutil
 import time
 
 import wandb
-import png
 import glob
 import rosbag
 
-from typing import Dict, Any, Callable, List
-from dataclasses import dataclass, field, asdict
+from typing import Dict, List
+from dataclasses import dataclass, asdict
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
-import onnx # workaround for https://github.com/onnx/onnx/issues/3493
 import onnxruntime as rt
 import torch
 
+
 import tensorflow.compat.v1 as tf
 
-from bot_env import SlicedRobotEnvironment, NormalizedRobotEnvironment, RobotEnvironment
+
+from bot_env import SlicedRobotEnvironment, NormalizedRobotEnvironment
 from sac import ReplayBuffer, TorchReplayBuffer, SoftActorCritic, TorchLSTMReplayBuffer
 import yolo_reward
 from split_dropout import SplitDropout
@@ -44,20 +43,20 @@ tf.disable_v2_behavior()
 @functools.lru_cache()
 def get_onnx_sess(onnx_path: str) -> rt.InferenceSession:
     print("Starting ONNX inference session")
-    return rt.InferenceSession(onnx_path)
+    return rt.InferenceSession(onnx_path, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 
 
 def _flatten(arr):
     return np.reshape(arr, -1)
 
-def read_bag(bag_file: str, backbone_onnx_path: str, reward_func_name: str,
+def read_bag(bag_file: str, cache_dir: str, backbone_onnx_path: str, reward_func_name: str,
              env: NormalizedRobotEnvironment,
              interpolation_slice: int,
              reward_delay_ms: int,
              base_reward_scale: float,
              punish_backtrack_ms: int) -> pd.DataFrame:
     print(f"Opening {bag_file}")
-    bag_cache_name = os.path.join(opt.cache_dir, f"{os.path.basename(bag_file)}_{reward_func_name}_{base_reward_scale}s_{interpolation_slice}slice+{reward_delay_ms}ms_-{punish_backtrack_ms}ms.arrow")
+    bag_cache_name = os.path.join(cache_dir, f"{os.path.basename(bag_file)}_{reward_func_name}_{base_reward_scale}s_{interpolation_slice}slice+{reward_delay_ms}ms_-{punish_backtrack_ms}ms.arrow")
 
     try:
         return _read_mmapped_bag(bag_cache_name)
@@ -311,6 +310,7 @@ def write_bag_cache(bag_file: str, bag_cache_path: str, backbone_onnx_path: str,
         with pa.RecordBatchFileWriter(sink, table.schema) as writer:
             writer.write_table(table)
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--bag-dir', type=str, help='directory with bag files to use for training data')
@@ -320,6 +320,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=128, help='number of samples per training step')
     parser.add_argument('--max-samples', type=int, default=20000, help='max number of training samples to load at once')
     parser.add_argument('--cpu', default=False, action="store_true", help='run training on CPU only')
+    parser.add_argument('--analyze-bags', default=False, action="store_true", help='Load the training checkpoint, then, instead of training, output a CSV of each bag\'s loss function')
     parser.add_argument('--reward-delay-ms', type=int, default=100, help='delay reward from action by the specified amount of milliseconds')
     parser.add_argument('--base-reward-scale', type=float, default=1.0, help='Default scaling for the base yolo-reward')
     parser.add_argument('--punish-backtrack-ms', type=int, default=4000, help='backtrack punishment by the button by the specified amount of milliseconds')
@@ -366,8 +367,13 @@ if __name__ == '__main__':
     start_load = time.perf_counter()
     all_entries = None
 
+    if opt.analyze_bags:
+        from analyze_bags import analyze_bags
+        analyze_bags(opt)
+        quit()
+
     for bag_path in tqdm(glob.glob(os.path.join(opt.bag_dir, "*.bag"))):
-        entries = read_bag(bag_path, opt.onnx, opt.reward,
+        entries = read_bag(bag_path, opt.cache_dir, opt.onnx, opt.reward,
                            env=NormalizedRobotEnvironment(SlicedRobotEnvironment(slice=backbone_slice)),
                            interpolation_slice=backbone_slice,
                            reward_delay_ms=opt.reward_delay_ms,
