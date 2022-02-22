@@ -328,7 +328,7 @@ if __name__ == '__main__':
     parser.add_argument('--dropout', type=float, default=0.88, help='input dropout rate for training')
     parser.add_argument('--backbone-slice', type=int, default=None, help='use every nth datapoint of the backbone')
     parser.add_argument('--cache-dir', type=str, default=None, help='directory to store precomputed values')
-    parser.add_argument('--epoch-steps', type=int, default=100, help='how often to save checkpoints')
+    parser.add_argument('--epoch-steps', type=int, default=1000, help='how often to save checkpoints')
     parser.add_argument('--seed', type=int, default=None, help='training seed')
     parser.add_argument('--history-indexes', type=str, default='-1,-2,-3,-5', help='which indexes to pass into the network')
     parser.add_argument('--gpu-replay-buffer', default=False, action="store_true", help='keep replay buffer in GPU memory')
