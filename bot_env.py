@@ -48,10 +48,10 @@ class SlicedRobotEnvironment(RobotEnvironment):
         super().__init__(**kwargs)
 
         yolo_output_size = 1024 * 15 * 20 if slice is None else ceil(1024 * 15 * 20 / slice)
-        pantilt_current_size = 2
+        pantilt_current_size = 4
         head_gyro_size = 3
         head_accel_size = 3
-        odrive_feedback_size = 2
+        odrive_feedback_size = 6
         vbus_size = 1
         total_size = (pantilt_current_size + head_gyro_size + head_accel_size
                      + odrive_feedback_size + vbus_size + yolo_output_size)
