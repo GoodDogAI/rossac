@@ -247,9 +247,11 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
         observation = np.concatenate([
             [env.normalize_pan(last_head_feedback[1]),
              env.normalize_tilt(last_head_feedback[0])],
+            last_head_feedback[3], # pan current %age
+            last_head_feedback[2], # tilt current %age
             last_head_gyro / 10.0,  # Divide radians/sec by ten to center around 0 closer
             last_head_accel / 10.0,  # Divide m/s by 10
-            last_odrive_feedback[0:2],  # Only the actual vel, not the commanded vel
+            last_odrive_feedback,  # actual vel, vel cmd, and motor current from both sides
             last_vbus - 14.0,  # Volts different from ~50% charge
             yolo_intermediate])
 
