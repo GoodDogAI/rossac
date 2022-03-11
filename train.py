@@ -256,7 +256,7 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
             last_odrive_feedback,  # actual vel, vel cmd, and motor current from both sides
             last_vbus - 14.0,  # Volts different from ~50% charge
 
-            button_reward,
+            [button_reward],
             yolo_intermediate])
 
         action = np.concatenate([
