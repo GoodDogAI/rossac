@@ -53,8 +53,9 @@ class SlicedRobotEnvironment(RobotEnvironment):
         head_accel_size = 3
         odrive_feedback_size = 6
         vbus_size = 1
+        reward_size = 1
         total_size = (pantilt_current_size + head_gyro_size + head_accel_size
-                     + odrive_feedback_size + vbus_size + yolo_output_size)
+                     + odrive_feedback_size + vbus_size + reward_size + yolo_output_size)
         self.observation_space = Box(low=-inf, high=inf, shape=(total_size,), dtype=np.float32)
 
 

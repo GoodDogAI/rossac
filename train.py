@@ -242,7 +242,8 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
         override_reward = DEFAULT_MANUAL_DRIVING_REWARD if last_reward_button_override_cmd_vel else 0.0
         final_reward += override_reward
 
-        final_reward += last_reward_button[0] * DEFAULT_PUNISHMENT_MULTIPLIER
+        button_reward = last_reward_button[0] * DEFAULT_PUNISHMENT_MULTIPLIER
+        final_reward += button_reward
 
         observation = np.concatenate([
             [env.normalize_pan(last_head_feedback[1]),
@@ -254,6 +255,8 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
             last_head_accel / 10.0,  # Divide m/s by 10
             last_odrive_feedback,  # actual vel, vel cmd, and motor current from both sides
             last_vbus - 14.0,  # Volts different from ~50% charge
+
+            button_reward,
             yolo_intermediate])
 
         action = np.concatenate([
