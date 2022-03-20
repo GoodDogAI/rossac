@@ -219,8 +219,28 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
             last_head_feedback = get_timed_entry(entries["head_feedback"], ts, -1)
             last_odrive_feedback = get_timed_entry(entries["odrive_feedback"], ts, -1)
             last_vbus = get_timed_entry(entries["vbus"], ts, -1)
-            last_head_gyro = get_timed_entry(entries["head_gyro"], ts, -1)
-            last_head_accel = get_timed_entry(entries["head_accel"], ts, -1)
+
+            last_head_gyros = [
+                get_timed_entry(entries["head_gyro"], ts, -1),
+                get_timed_entry(entries["head_gyro"], ts, -2),
+                get_timed_entry(entries["head_gyro"], ts, -3),
+                get_timed_entry(entries["head_gyro"], ts, -4),
+                get_timed_entry(entries["head_gyro"], ts, -5),
+                get_timed_entry(entries["head_gyro"], ts, -6),
+                get_timed_entry(entries["head_gyro"], ts, -7),
+                get_timed_entry(entries["head_gyro"], ts, -8),
+                ]
+
+            last_head_accels = [
+                get_timed_entry(entries["head_accel"], ts, -1),
+                get_timed_entry(entries["head_accel"], ts, -2),
+                get_timed_entry(entries["head_accel"], ts, -3),
+                get_timed_entry(entries["head_accel"], ts, -4),
+                get_timed_entry(entries["head_accel"], ts, -5),
+                get_timed_entry(entries["head_gyro"], ts, -6),
+                get_timed_entry(entries["head_gyro"], ts, -7),
+                get_timed_entry(entries["head_gyro"], ts, -8),
+                ]
 
             next_head_cmd = get_timed_entry(entries["head_cmd"], ts, 1)
             next_cmd_vel = get_timed_entry(entries["cmd_vel"], ts, 1)
@@ -251,8 +271,8 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
              last_head_feedback[3], # pan current %age
              last_head_feedback[2]], # tilt current %age
 
-            last_head_gyro / 10.0,  # Divide radians/sec by ten to center around 0 closer
-            last_head_accel / 10.0,  # Divide m/s by 10
+            last_head_gyros / 10.0,  # Divide radians/sec by ten to center around 0 closer
+            last_head_accels / 10.0,  # Divide m/s by 10
             last_odrive_feedback,  # actual vel, vel cmd, and motor current from both sides
             last_vbus - 14.0,  # Volts different from ~50% charge
 
