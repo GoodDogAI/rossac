@@ -271,8 +271,8 @@ def create_dataset(entries:  Dict[str, Dict[int, np.ndarray]],
              last_head_feedback[3], # pan current %age
              last_head_feedback[2]], # tilt current %age
 
-            last_head_gyros / 10.0,  # Divide radians/sec by ten to center around 0 closer
-            last_head_accels / 10.0,  # Divide m/s by 10
+            np.concatenate(last_head_gyros) / 10.0,  # Divide radians/sec by ten to center around 0 closer
+            np.concatenate(last_head_accels) / 10.0,  # Divide m/s by 10
             last_odrive_feedback,  # actual vel, vel cmd, and motor current from both sides
             last_vbus - 14.0,  # Volts different from ~50% charge
 
