@@ -41,6 +41,9 @@ SAMPLES_PER_STEP = 1024*1024
 
 tf.disable_v2_behavior()
 
+# explicitly disable TF32: https://dev-discuss.pytorch.org/t/pytorch-and-tensorfloat32/504/5
+torch.backends.cuda.allow_tf32 = False
+
 @functools.lru_cache()
 def get_onnx_sess(onnx_path: str) -> rt.InferenceSession:
     print("Starting ONNX inference session")
