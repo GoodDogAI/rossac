@@ -24,6 +24,7 @@ class ReplayBuffer:
         self.rew_buf = np.zeros(size, dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
+        self.obs_dim, self.act_dim = obs_dim, act_dim
 
     def store(self, obs, act, rew, next_obs, done):
         self.obs_buf[self.ptr] = obs
@@ -44,7 +45,7 @@ class ReplayBuffer:
         return {k: torch.as_tensor(v, dtype=torch.float32) for k, v in batch.items()}
 
 class TorchReplayBuffer:
-    def __init__(self, obs_dim, act_dim, size, device=None):
+    def __init__(self, obs_dim, act_dim, size, device=None):      
         self.device = device
         self.obs_buf = torch.zeros(core.combined_shape(size, obs_dim), device=device, dtype=torch.float32)
         self.obs2_buf = torch.zeros(core.combined_shape(size, obs_dim), device=device, dtype=torch.float32)
@@ -52,6 +53,7 @@ class TorchReplayBuffer:
         self.rew_buf = torch.zeros(size, device=device, dtype=torch.float32)
         self.done_buf = torch.zeros(size, device=device, dtype=torch.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
+        self.obs_dim, self.act_dim = obs_dim, act_dim
 
     def store(self, obs, act, rew, next_obs, done):
         with torch.no_grad():
@@ -89,6 +91,7 @@ class TorchLSTMReplayBuffer:
         self.lstm_history_lens = torch.zeros(size, device="cpu", dtype=torch.int64)
         self.history_size = history_size
         self.ptr, self.size, self.max_size = 0, 0, size
+        self.obs_dim, self.act_dim = obs_dim, act_dim
 
     def store(self, obs, act, rew, next_obs, lstm_history_count, done):
         with torch.no_grad():
